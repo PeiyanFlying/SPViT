@@ -325,9 +325,12 @@ class PredictorLG(nn.Module):
         if self.training:
             mask = torch.sigmoid((x[:,:,0:1] - keep_threshold) / self.temperature)
         else:
-            mask = torch.sigmoid((x[:,:,0:1] - keep_threshold) / self.temperature)
-            # mask = torch.ones(x[:,:,0:1].shape, device=x.device)
-            # mask[x[:,:,0:1] < keep_threshold] = 0
+            # mask = torch.sigmoid((x[:,:,0:1] - keep_threshold) / self.temperature)
+            mask = torch.ones(x[:,:,0:1].shape, device=x.device)
+            print(mask)
+            mask[x[:,:,0:1] < keep_threshold] = 0
+            print(mask)
+            print(mask.size())
 
         self.mask = mask*policy
 
