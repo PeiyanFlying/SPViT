@@ -37,18 +37,9 @@ You can train models with different keeping ratio by adjusting ```base_rate```. 
 
 
 ###### 以下是正在开发的代码
-# debug for channel merge
-python3 -m torch.distributed.launch --nproc_per_node=8 --use_env main_dy_channel.py  --output_dir logs/dynamic-vit_deit-small --arch deit_small --input-size 224 --batch-size 48 --data-path /home/ImageNet/ --epochs 30 --dist-eval --distill --base_rate 0.7 --addl1 --pruning_ratio 0.2
-
-CUDA_VISIBLE_DEVICES=1 python3 main_dy_channel.py  --output_dir logs/dynamic-vit_deit-small --arch deit_small --input-size 224 --batch-size 2 --data-path /home/ImageNet/ --epochs 30 --dist-eval --distill --base_rate 0.7 --addl1 --pruning_ratio 0.2
-
 # debug for soft mask merge
-
-
-CUDA_VISIBLE_DEVICES=1,2,3,4,5,6,7 python3 main_dynamic_vit.py  --output_dir logs/dynamic-vit_deit-small --arch deit_small --input-size 224 --batch-size 2 --data-path /home/ImageNet/ --epochs 30 --dist-eval --distill --base_rate 0.7
 
 python3 -m torch.distributed.launch --nproc_per_node=8 --use_env main_soft_vit.py --output_dir logs/dynamic-vit_deit-small --arch deit_small --input-size 224 --batch-size 96 --data-path /data/ImageNet_new/ --epochs 30 --dist-eval --distill --base_rate 0.7 2>&1 | tee -i test.log
 
 CUDA_VISIBLE_DEVICES=0,1,2,3 python3 main_soft_vit.py --output_dir logs/dynamic-vit_deit-small --arch deit_small --input-size 224 --batch-size 384 --data-path /data/ImageNet_new/ --epochs 30 --dist-eval --distill --base_rate 0.7 2>&1 | tee -i fine_soft.log
-CUDA_VISIBLE_DEVICES=2 python3 main_dynamic_vit.py --output_dir logs/dynamic-vit_deit-small --arch deit_small --input-size 224 --batch-size 2 --data-path /data/ImageNet_new/ --epochs 30 --dist-eval --distill --base_rate 0.7 2>&1 | tee -i fine_orig.log
 
