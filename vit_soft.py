@@ -290,12 +290,12 @@ class PredictorLG(nn.Module):
     """
     def __init__(self, module_num, embed_dim=384):
         super().__init__()
-        self.keep_threshold_base = torch.tensor(-0.7)
+        self.keep_threshold_base = torch.tensor(0.48)
         self.keep_threshold = nn.Parameter(
                 torch.zeros_like(self.keep_threshold_base),
                 requires_grad=True,
         )
-        self.temperature = 1e-3
+        self.temperature = 1e-2
         self.mask = None
 
         self.in_conv = nn.Sequential(
@@ -310,7 +310,7 @@ class PredictorLG(nn.Module):
             nn.Linear(embed_dim // 2, embed_dim // 4),
             nn.GELU(),
             nn.Linear(embed_dim // 4, 2),
-            nn.LogSoftmax(dim=-1)
+            nn.Softmax(dim=-1)
         )
 
     def forward(self, x, policy):
@@ -327,10 +327,7 @@ class PredictorLG(nn.Module):
         else:
             # mask = torch.sigmoid((x[:,:,0:1] - keep_threshold) / self.temperature)
             mask = torch.ones(x[:,:,0:1].shape, device=x.device)
-            print(mask)
             mask[x[:,:,0:1] < keep_threshold] = 0
-            print(mask)
-            print(mask.size())
 
         self.mask = mask*policy
 
