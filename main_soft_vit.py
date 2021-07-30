@@ -17,7 +17,7 @@ from timm.utils import NativeScaler, get_state_dict, ModelEma
 from torch.nn import parameter
 
 from datasets import build_dataset
-from engine import train_one_epoch, evaluate
+from engine_soft import train_one_epoch, evaluate
 from losses_soft import DistillationLoss, DiffPruningLoss, DistillDiffPruningLoss
 from samplers import RASampler
 import utils
