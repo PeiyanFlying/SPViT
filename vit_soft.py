@@ -26,6 +26,7 @@ from copy import Error, deepcopy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 
 from utils import batch_index_select
 
@@ -290,12 +291,12 @@ class PredictorLG(nn.Module):
     """
     def __init__(self, module_num, embed_dim=384):
         super().__init__()
-        self.keep_threshold_base = torch.tensor(-0.7)
+        self.keep_threshold_base = torch.tensor(0.486)
         self.keep_threshold = nn.Parameter(
                 torch.zeros_like(self.keep_threshold_base),
-                requires_grad=True,
+                requires_grad=False,
         )
-        self.temperature = 1e-3
+        self.temperature = 1e-1
         self.mask = None
 
         self.in_conv = nn.Sequential(
@@ -310,7 +311,7 @@ class PredictorLG(nn.Module):
             nn.Linear(embed_dim // 2, embed_dim // 4),
             nn.GELU(),
             nn.Linear(embed_dim // 4, 2),
-            nn.LogSoftmax(dim=-1)
+            nn.Softmax(dim=-1)
         )
 
     def forward(self, x, policy):
@@ -324,13 +325,11 @@ class PredictorLG(nn.Module):
 
         if self.training:
             mask = torch.sigmoid((x[:,:,0:1] - keep_threshold) / self.temperature)
+            # print(mask)
         else:
             # mask = torch.sigmoid((x[:,:,0:1] - keep_threshold) / self.temperature)
             mask = torch.ones(x[:,:,0:1].shape, device=x.device)
-            print(mask)
             mask[x[:,:,0:1] < keep_threshold] = 0
-            print(mask)
-            print(mask.size())
 
         self.mask = mask*policy
 
@@ -452,6 +451,8 @@ class VisionTransformerDiffPruning(nn.Module):
         p_count = 0
         out_pred_prob = []
         init_n = 14 * 14
+        sparse = []
+
         prev_decision = torch.ones(B, init_n, 1, dtype=x.dtype, device=x.device)
         policy = torch.ones(B, init_n + 1, 1, dtype=x.dtype, device=x.device)
         for i, blk in enumerate(self.blocks):
@@ -468,6 +469,9 @@ class VisionTransformerDiffPruning(nn.Module):
                     cls_policy = torch.ones(B, 1, 1, dtype=curent_mask.dtype, device=curent_mask.device)
                     now_policy = torch.cat([cls_policy, curent_mask], dim=1)
                     now_policy = now_policy.repeat(1,1,x.shape[2])
+                    print('predictor_{}_sparsity and threshold {}:'.format(p_count,threshold))
+                    zeros, unzeros = test_irregular_sparsity(p_count, now_policy)
+                    sparse.append([zeros, unzeros])
                     x = blk(x*now_policy)
                     prev_decision = curent_mask
                 p_count += 1
@@ -489,7 +493,7 @@ class VisionTransformerDiffPruning(nn.Module):
             else:
                 return x, out_pred_prob
         else:
-            return x
+            return x, sparse
 
 class VisionTransformerTeacher(nn.Module):
     """ Vision Transformer
@@ -638,5 +642,24 @@ def checkpoint_filter_fn(state_dict, model):
             v = resize_pos_embed(v, model.pos_embed)
         out_dict[k] = v
     return out_dict
+
+def test_irregular_sparsity(name,matrix):
+
+    # continue
+    zeros = np.sum(matrix.cpu().detach().numpy() == 0)
+
+    non_zeros = np.sum(matrix.cpu().detach().numpy() != 0)
+
+    # print(name, non_zeros)
+    print(" {}, all weights: {}, irregular zeros: {}, irregular sparsity is: {:.4f}".format( name, zeros+non_zeros, zeros, zeros / (zeros + non_zeros)))
+    # print(non_zeros+zeros)
+    # total_nonzeros += 128000
+
+    return zeros,non_zeros
+
+
+
+
+
 
 
