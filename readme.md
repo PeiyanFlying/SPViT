@@ -1,3 +1,6 @@
+## 调参 link
+https://docs.google.com/spreadsheets/d/1k25sS_-mmQyIvpIrn32GUw3eRuYcCy0cN0OSOq0QGFI/edit?usp=sharing
+
 ## vit.py 文件改动，生成 vit_soft.py
 
 ### soft mask 生成处
@@ -10,3 +13,4 @@
 
 ### DistillDiffPruningLoss forward 部分
 ![avatar](fig/3.png)
+
