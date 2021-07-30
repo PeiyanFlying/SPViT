@@ -286,7 +286,7 @@ def main(args):
         print('Attention: mixup/cutmix are not used')
 
     base_rate = args.base_rate
-    KEEP_RATE = [0.8, 1.0, 1.2]
+    KEEP_RATE = [1.0, 1.0, 1.0]
 
     if args.arch == 'deit_small':
         PRUNING_LOC = [3,6,9] 
@@ -405,7 +405,7 @@ def main(args):
 
         model.load_state_dict(checkpoint_model, strict=False)
 
-    model = nn.DataParallel(model)
+    # model = nn.DataParallel(model)
     model.to(device)
 
     model_ema = None
