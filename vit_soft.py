@@ -291,10 +291,10 @@ class PredictorLG(nn.Module):
     """
     def __init__(self, module_num, embed_dim=384):
         super().__init__()
-        self.keep_threshold_base = torch.tensor(0.49)
+        self.keep_threshold_base = torch.tensor(0.486)
         self.keep_threshold = nn.Parameter(
                 torch.zeros_like(self.keep_threshold_base),
-                requires_grad=True,
+                requires_grad=False,
         )
         self.temperature = 1e-1
         self.mask = None
@@ -451,10 +451,10 @@ class VisionTransformerDiffPruning(nn.Module):
         p_count = 0
         out_pred_prob = []
         init_n = 14 * 14
+        sparse = []
 
         prev_decision = torch.ones(B, init_n, 1, dtype=x.dtype, device=x.device)
         policy = torch.ones(B, init_n + 1, 1, dtype=x.dtype, device=x.device)
-        print('=============')
         for i, blk in enumerate(self.blocks):
             if i in self.pruning_loc:
                 spatial_x = x[:, 1:]
@@ -469,9 +469,9 @@ class VisionTransformerDiffPruning(nn.Module):
                     cls_policy = torch.ones(B, 1, 1, dtype=curent_mask.dtype, device=curent_mask.device)
                     now_policy = torch.cat([cls_policy, curent_mask], dim=1)
                     now_policy = now_policy.repeat(1,1,x.shape[2])
-                    print('predictor_{}_sparsity:'.format(p_count))
-                    test_irregular_sparsity(p_count, now_policy)
-                    print(threshold)
+                    print('predictor_{}_sparsity and threshold {}:'.format(p_count,threshold))
+                    zeros, unzeros = test_irregular_sparsity(p_count, now_policy)
+                    sparse.append([zeros, unzeros])
                     x = blk(x*now_policy)
                     prev_decision = curent_mask
                 p_count += 1
@@ -493,7 +493,7 @@ class VisionTransformerDiffPruning(nn.Module):
             else:
                 return x, out_pred_prob
         else:
-            return x
+            return x, sparse
 
 class VisionTransformerTeacher(nn.Module):
     """ Vision Transformer
@@ -654,6 +654,10 @@ def test_irregular_sparsity(name,matrix):
     print(" {}, all weights: {}, irregular zeros: {}, irregular sparsity is: {:.4f}".format( name, zeros+non_zeros, zeros, zeros / (zeros + non_zeros)))
     # print(non_zeros+zeros)
     # total_nonzeros += 128000
+
+    return zeros,non_zeros
+
+
 
 
 
