@@ -32,6 +32,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
 
+
         if mixup_fn is not None:
             samples, targets = mixup_fn(samples, targets)
 
@@ -74,6 +75,7 @@ def evaluate(data_loader, model, device):
     # switch to evaluation mode
     model.eval()
 
+
     for images, target in metric_logger.log_every(data_loader, 10, header):
         images = images.to(device, non_blocking=True)
         target = target.to(device, non_blocking=True)
@@ -84,6 +86,8 @@ def evaluate(data_loader, model, device):
             loss = criterion(output, target)
 
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
+
+
 
         batch_size = images.shape[0]
         metric_logger.update(loss=loss.item())
