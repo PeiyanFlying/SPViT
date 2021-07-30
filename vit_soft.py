@@ -26,6 +26,7 @@ from copy import Error, deepcopy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 
 from utils import batch_index_select
 
@@ -290,12 +291,12 @@ class PredictorLG(nn.Module):
     """
     def __init__(self, module_num, embed_dim=384):
         super().__init__()
-        self.keep_threshold_base = torch.tensor(0.48)
+        self.keep_threshold_base = torch.tensor(0.49)
         self.keep_threshold = nn.Parameter(
                 torch.zeros_like(self.keep_threshold_base),
                 requires_grad=True,
         )
-        self.temperature = 1e-2
+        self.temperature = 1e-1
         self.mask = None
 
         self.in_conv = nn.Sequential(
@@ -324,6 +325,7 @@ class PredictorLG(nn.Module):
 
         if self.training:
             mask = torch.sigmoid((x[:,:,0:1] - keep_threshold) / self.temperature)
+            # print(mask)
         else:
             # mask = torch.sigmoid((x[:,:,0:1] - keep_threshold) / self.temperature)
             mask = torch.ones(x[:,:,0:1].shape, device=x.device)
@@ -449,8 +451,10 @@ class VisionTransformerDiffPruning(nn.Module):
         p_count = 0
         out_pred_prob = []
         init_n = 14 * 14
+
         prev_decision = torch.ones(B, init_n, 1, dtype=x.dtype, device=x.device)
         policy = torch.ones(B, init_n + 1, 1, dtype=x.dtype, device=x.device)
+        print('=============')
         for i, blk in enumerate(self.blocks):
             if i in self.pruning_loc:
                 spatial_x = x[:, 1:]
@@ -465,6 +469,9 @@ class VisionTransformerDiffPruning(nn.Module):
                     cls_policy = torch.ones(B, 1, 1, dtype=curent_mask.dtype, device=curent_mask.device)
                     now_policy = torch.cat([cls_policy, curent_mask], dim=1)
                     now_policy = now_policy.repeat(1,1,x.shape[2])
+                    print('predictor_{}_sparsity:'.format(p_count))
+                    test_irregular_sparsity(p_count, now_policy)
+                    print(threshold)
                     x = blk(x*now_policy)
                     prev_decision = curent_mask
                 p_count += 1
@@ -635,5 +642,20 @@ def checkpoint_filter_fn(state_dict, model):
             v = resize_pos_embed(v, model.pos_embed)
         out_dict[k] = v
     return out_dict
+
+def test_irregular_sparsity(name,matrix):
+
+    # continue
+    zeros = np.sum(matrix.cpu().detach().numpy() == 0)
+
+    non_zeros = np.sum(matrix.cpu().detach().numpy() != 0)
+
+    # print(name, non_zeros)
+    print(" {}, all weights: {}, irregular zeros: {}, irregular sparsity is: {:.4f}".format( name, zeros+non_zeros, zeros, zeros / (zeros + non_zeros)))
+    # print(non_zeros+zeros)
+    # total_nonzeros += 128000
+
+
+
 
 

@@ -37,7 +37,7 @@ def get_args_parser():
     parser.add_argument('--arch', default='deit_small', type=str, help='Name of model to train')
     parser.add_argument('--input-size', default=224, type=int, help='images input size')
     parser.add_argument('--distillw', type=float, default=0.5, help='distill rate (default: 0.5)')
-    parser.add_argument('--ratiow', type=float, default=2.0, metavar='PCT', help='ratio rate (default: 2.0)')
+    parser.add_argument('--ratiow', type=float, default=0.1, metavar='PCT', help='ratio rate (default: 2.0)')
     parser.add_argument('--drop', type=float, default=0.0, metavar='PCT',
                         help='Dropout rate (default: 0.)')
     parser.add_argument('--drop-path', type=float, default=0.1, metavar='PCT',
@@ -286,7 +286,7 @@ def main(args):
         print('Attention: mixup/cutmix are not used')
 
     base_rate = args.base_rate
-    KEEP_RATE = [0.5, 1.0, 1.5]
+    KEEP_RATE = [0.8, 1.0, 1.2]
 
     if args.arch == 'deit_small':
         PRUNING_LOC = [3,6,9] 

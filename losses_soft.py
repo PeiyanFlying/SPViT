@@ -195,11 +195,18 @@ class DistillDiffPruningLoss(torch.nn.Module):
         # print(mask)
 
         # bool_mask = mask.reshape(B*N) > 0.5
+        # print('====================')
+        # print(mask.size())
         bool_mask = mask.repeat(1,1,C).reshape(B*N, C)
+        # print(bool_mask.size())
+        # print('------')
 
 
         token_pred = token_pred.reshape(B*N, C)
         token_t = token_t.reshape(B*N, C)
+        # print(token_t.size())
+        # print(token_pred.size()) 维度都是对的
+        # print('====================')
 
         if mask.sum() < 0.1:
             token_kl_loss = token_pred.new(1,).fill_(0.0)
