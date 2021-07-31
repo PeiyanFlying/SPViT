@@ -211,10 +211,11 @@ class DistillDiffPruningLoss(torch.nn.Module):
         if mask.sum() < 0.1:
             token_kl_loss = token_pred.new(1,).fill_(0.0)
         else:
-            token_t = token_t*bool_mask
-            token_pred = token_pred*bool_mask
+            token_t = token_t
+            token_pred = token_pred
             if self.mse_token:
-                token_kl_loss = torch.pow(token_pred - token_t, 2).mean()
+                kl_tm = torch.pow(token_pred - token_t, 2)*bool_mask
+                token_kl_loss = kl_tm.mean()
             else:
                 token_kl_loss = F.kl_div(
                         F.log_softmax(token_pred, dim=-1),
