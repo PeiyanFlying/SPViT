@@ -182,6 +182,22 @@ class Attention(nn.Module):
         attn = (attn + eps/N) / (attn.sum(dim=-1, keepdim=True) + eps)
         return attn.type_as(max_att)
 
+    def softmax_with_policy_evaluation(self, attn, policy, eps=1e-6):
+        B, N, _ = policy.size()
+        B, H, N, N = attn.size()
+
+        attn_policy = policy*(policy.reshape(B,1,N))
+        attn_policy = attn_policy.reshape(B,1,N,N)
+        max_att = torch.max(attn, dim=-1, keepdim=True)[0]
+        attn = attn - max_att
+
+        attn = attn.to(torch.float32).exp_() * attn_policy.to(torch.float32)
+        attn = (attn) / (attn.sum(dim=-1, keepdim=True))
+
+        zero = torch.zeros_like(attn)
+        attn = torch.where(torch.isnan(attn), zero, attn)
+        return attn.type_as(max_att)
+
     def forward(self, x, policy):
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
@@ -191,8 +207,10 @@ class Attention(nn.Module):
 
         if policy is None:
             attn = attn.softmax(dim=-1)
-        else:
+        elif (policy is not None) and (self.training):
             attn = self.softmax_with_policy(attn, policy)
+        elif (policy is not None) and (not self.training):
+            attn = self.softmax_with_policy_evaluation(attn, policy)
 
         x = (attn @ v).transpose(1, 2).reshape(B, N, C)
 
@@ -449,17 +467,17 @@ class VisionTransformerDiffPruning(nn.Module):
                     #num_keep_node = int(init_n * self.token_ratio[p_count])
                     #keep_policy = torch.argsort(score, dim=1, descending=True)[:, :num_keep_node]
                     cls_policy = torch.zeros(B, 1,1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
-                    policy = torch.cat([cls_policy, hard_keep_decision], dim=1)
-                    zeros, unzeros = test_irregular_sparsity(p_count, policy)
+                    now_policy = torch.cat([cls_policy, hard_keep_decision], dim=1)
+                    zeros, unzeros = test_irregular_sparsity(p_count, now_policy)
                     sparse.append([zeros, unzeros])
-                    x = blk(x, policy=policy)
+                    x = blk(x*now_policy, policy=now_policy)
                     prev_decision = hard_keep_decision
                 p_count += 1
             else:
                 if self.training:
                     x = blk(x, policy)
                 else:
-                    x = blk(x, policy=policy)
+                    x = blk(x*now_policy, policy=now_policy)
 
         x = self.norm(x)
         features = x[:, 1:]
