@@ -27,6 +27,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import json
 
 from utils import batch_index_select
 
@@ -34,6 +35,8 @@ from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 
 _logger = logging.getLogger(__name__)
+
+
 
 
 def _cfg(url='', **kwargs):
@@ -174,10 +177,7 @@ class Attention(nn.Module):
         attn_policy = attn_policy + (1.0 - attn_policy) * eye
         max_att = torch.max(attn, dim=-1, keepdim=True)[0]
         attn = attn - max_att
-        # attn = attn.exp_() * attn_policy
-        # return attn / attn.sum(dim=-1, keepdim=True)
 
-        # for stable training
         attn = attn.to(torch.float32).exp_() * attn_policy.to(torch.float32)
         attn = (attn + eps/N) / (attn.sum(dim=-1, keepdim=True) + eps)
         return attn.type_as(max_att)
@@ -425,13 +425,15 @@ class VisionTransformerDiffPruning(nn.Module):
         x = x + self.pos_embed
         x = self.pos_drop(x)
 
+        if not self.training:
+            file = open('sparsity.json','a+')
+
         p_count = 0
         out_pred_prob = []
         init_n = 14 * 14
         sparse = []
         prev_decision = torch.ones(B, init_n, 1, dtype=x.dtype, device=x.device)
         policy = torch.ones(B, init_n + 1, 1, dtype=x.dtype, device=x.device)
-        now_policy = torch.ones(B, init_n + 1, 1, dtype=x.dtype, device=x.device)
         for i, blk in enumerate(self.blocks):
             if i in self.pruning_loc:
                 spatial_x = x[:, 1:]
@@ -445,15 +447,15 @@ class VisionTransformerDiffPruning(nn.Module):
                     x = blk(x, policy=policy)
                     prev_decision = hard_keep_decision
                 else:
-                    #score = pred_score[:,:,0]
-                    #num_keep_node = int(init_n * self.token_ratio[p_count])
-                    #keep_policy = torch.argsort(score, dim=1, descending=True)[:, :num_keep_node]
                     cls_policy = torch.zeros(B, 1,1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
                     policy = torch.cat([cls_policy, hard_keep_decision], dim=1)
                     zeros, unzeros = test_irregular_sparsity(p_count, policy)
                     sparse.append([zeros, unzeros])
                     x = blk(x, policy=policy)
                     prev_decision = hard_keep_decision
+
+                    score = pred_score.numpy().tolist()
+                    file.write(str(score)+ '\n')
                 p_count += 1
             else:
                 if self.training:
@@ -473,6 +475,7 @@ class VisionTransformerDiffPruning(nn.Module):
             else:
                 return x, out_pred_prob
         else:
+            file.close()
             return x, sparse
 
 class VisionTransformerTeacher(nn.Module):
