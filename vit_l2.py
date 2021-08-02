@@ -186,7 +186,8 @@ class Attention(nn.Module):
         B, N, _ = policy.size()
         B, H, N, N = attn.size()
 
-        attn_policy = policy*policy.reshape(B,1,N)
+        attn_policy = policy*(policy.reshape(B,1,N))
+        attn_policy = attn_policy.reshape(B,1,N,N)
         max_att = torch.max(attn, dim=-1, keepdim=True)[0]
         attn = attn - max_att
 
@@ -216,7 +217,6 @@ class Attention(nn.Module):
         x = self.proj(x)
         x = self.proj_drop(x)
         return x
-
 
 
 class Block(nn.Module):
