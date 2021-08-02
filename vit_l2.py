@@ -186,7 +186,6 @@ class Attention(nn.Module):
         B, N, _ = policy.size()
         B, H, N, N = attn.size()
 
-#         attn_policy = policy.shape(B,N,1)  # * policy.reshape(B, 1, N)
         attn_policy = policy*policy.reshape(B,1,N)
         max_att = torch.max(attn, dim=-1, keepdim=True)[0]
         attn = attn - max_att
@@ -196,7 +195,7 @@ class Attention(nn.Module):
 
         zero = torch.zeros_like(attn)
         attn = torch.where(torch.isnan(attn), zero, attn)
-        return attn
+        return attn.type_as(max_att)
 
     def forward(self, x, policy):
         B, N, C = x.shape
@@ -210,7 +209,7 @@ class Attention(nn.Module):
         elif (policy is not None) and (self.training):
             attn = self.softmax_with_policy(attn, policy)
         elif (policy is not None) and (not self.training):
-            attn = self.softmax_with_policy_evalution(attn, policy)
+            attn = self.softmax_with_policy_evaluation(attn, policy)
 
         x = (attn @ v).transpose(1, 2).reshape(B, N, C)
 
