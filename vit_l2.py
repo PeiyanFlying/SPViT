@@ -427,8 +427,8 @@ class VisionTransformerDiffPruning(nn.Module):
         x = x + self.pos_embed
         x = self.pos_drop(x)
 
-        if not self.training:
-            file = open('sparsity.json','a+')
+        # if not self.training:
+        #     file = open('sparsity.json','a+')
 
         p_count = 0
         out_pred_prob = []
@@ -456,8 +456,8 @@ class VisionTransformerDiffPruning(nn.Module):
                     x = blk(x, policy=policy)
                     prev_decision = hard_keep_decision
 
-                    score = pred_score.numpy().tolist()
-                    file.write(str(score)+ '\n')
+                    score = pred_score.cpu().numpy().tolist()
+                    # file.write(str(score)+ '\n')
                 p_count += 1
             else:
                 if self.training:
@@ -477,7 +477,7 @@ class VisionTransformerDiffPruning(nn.Module):
             else:
                 return x, out_pred_prob
         else:
-            file.close()
+            # file.close()
             return x, sparse
 
 class VisionTransformerTeacher(nn.Module):
