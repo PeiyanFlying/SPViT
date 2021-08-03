@@ -38,11 +38,15 @@ from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 import xlrd
 import xlwt
 from xlutils.copy import copy
+import os
 
 _logger = logging.getLogger(__name__)
 
 book_name_xls = 'score_recoder.xls'
-
+if not os.path.exists(book_name_xls):
+    workbook = xlwt.Workbook(encoding='utf-8')
+    sheet1 = workbook.add_sheet("score_recoder")
+    workbook.save('score_recoder.xls')
 
 def _cfg(url='', **kwargs):
     return {
