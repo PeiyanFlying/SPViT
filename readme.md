@@ -7,8 +7,6 @@ https://docs.google.com/spreadsheets/d/1k25sS_-mmQyIvpIrn32GUw3eRuYcCy0cN0OSOq0Q
 ![avatar](fig/1.png)
 ### VisionTransformerDiffPruning 的 forward 处/training & evaluation & test_sparsity
 ![avatar](fig/2.png)
-### 增加 sparsity 测试和 score 统计函数
-![avatar](fig/4.png)
 
 ## losses.py文件改动生成 losses_l2.py
 
