@@ -35,18 +35,12 @@ from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 
 # coding=UTF-8
-import xlrd
-import xlwt
-from xlutils.copy import copy
 import os
 
 _logger = logging.getLogger(__name__)
 
-book_name_xls = 'score_recoder.xls'
-if not os.path.exists(book_name_xls):
-    workbook = xlwt.Workbook(encoding='utf-8')
-    sheet1 = workbook.add_sheet("score_recoder")
-    workbook.save('score_recoder.xls')
+file = 'score_recorder.json'
+
 
 def _cfg(url='', **kwargs):
     return {
@@ -440,6 +434,7 @@ class VisionTransformerDiffPruning(nn.Module):
         out_pred_prob = []
         init_n = 14 * 14
         sparse = []
+        score_dict = {}
         prev_decision = torch.ones(B, init_n, 1, dtype=x.dtype, device=x.device)
         policy = torch.ones(B, init_n + 1, 1, dtype=x.dtype, device=x.device)
         for i, blk in enumerate(self.blocks):
@@ -461,9 +456,8 @@ class VisionTransformerDiffPruning(nn.Module):
                     sparse.append([zeros, unzeros])
                     x = blk(x, policy=policy)
                     prev_decision = hard_keep_decision
-
                     score = pred_score.cpu().numpy().tolist()
-                    write_excel_xls_append(book_name_xls, score)
+                    score_dict[p_count] = score
                 p_count += 1
             else:
                 if self.training:
@@ -483,6 +477,9 @@ class VisionTransformerDiffPruning(nn.Module):
             else:
                 return x, out_pred_prob
         else:
+            with open(file, 'a') as f: # ins
+                json.dump(score_dict, f)
+                f.write('\n')
             return x, sparse
 
 class VisionTransformerTeacher(nn.Module):
@@ -648,17 +645,3 @@ def test_irregular_sparsity(name,matrix):
     return zeros,non_zeros
 
 
-
-def write_excel_xls_append(path, value):
-    index = len(value)  # 获取需要写入数据的行数
-    workbook = xlrd.open_workbook(path)  # 打开工作簿
-    sheets = workbook.sheet_names()  # 获取工作簿中的所有表格
-    worksheet = workbook.sheet_by_name(sheets[0])  # 获取工作簿中所有表格中的的第一个表格
-    rows_old = worksheet.nrows  # 获取表格中已存在的数据的行数
-    new_workbook = copy(workbook)  # 将xlrd对象拷贝转化为xlwt对象
-    new_worksheet = new_workbook.get_sheet(0)  # 获取转化后工作簿中的第一个表格
-    for i in range(0, index):
-        for j in range(0, len(value[i])):
-            new_worksheet.write(i+rows_old, j, value[i][j])  # 追加写入数据，注意是从i+rows_old行开始写入
-    new_workbook.save(path)  # 保存工作簿
-    print('xls sheet append done')
