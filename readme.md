@@ -1,6 +1,9 @@
 ## 调参 link
 https://docs.google.com/spreadsheets/d/1k25sS_-mmQyIvpIrn32GUw3eRuYcCy0cN0OSOq0QGFI/edit?usp=sharing
 
+## score 数据记录
+https://drive.google.com/drive/folders/1diICKopeYL7H84Wsr0Xxh30e9xh6RX2d?usp=sharing
+
 ## vit.py 文件改动，生成 vit_l2.py
 
 ### Attention 类修改
