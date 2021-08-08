@@ -456,8 +456,10 @@ class VisionTransformerDiffPruning(nn.Module):
                     sparse.append([zeros, unzeros])
                     x = blk(x, policy=policy)
                     prev_decision = hard_keep_decision
-                    score = pred_score.cpu().numpy().tolist()
-                    score_dict[p_count] = score
+                    score = pred_score[:, :, 0:1].cpu().numpy().tolist()
+                    score_dict[p_count] = score[0] #144/12=12x30x87x4=125280= 1.5G
+
+
                 p_count += 1
             else:
                 if self.training:
