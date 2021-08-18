@@ -177,14 +177,10 @@ class DistillDiffPruningLoss(torch.nn.Module):
         ratio = self.keep_ratio
         for i, score in enumerate(out_pred_score):
             if self.dynamic:
-                #pos_ratio = score.mean()
-                #pos_ratio = torch.norm(score, p=2, dim=1)
-                row_l2_norm = torch.norm(score, 2, dim=1).mean()
+                pos_ratio = score.mean()
             else:
-                #pos_ratio = score.mean(1)
-                #pos_ratio = torch.norm(score, p=2, dim=1)
-                row_l2_norm = torch.norm(score, 2, dim=1).mean()
-            pred_loss = pred_loss + row_l2_norm #((pos_ratio) ** 2).mean()
+                pos_ratio = score.mean()
+            pred_loss = pred_loss + ((pos_ratio - ratio[i]) ** 2).mean()
 
         cls_loss = self.base_criterion(pred, labels)
 
