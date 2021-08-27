@@ -39,7 +39,7 @@ import os
 
 _logger = logging.getLogger(__name__)
 
-file = 'score_recorder.json'
+file = 'score.json'
 
 
 def _cfg(url='', **kwargs):
@@ -450,7 +450,7 @@ class VisionTransformerDiffPruning(nn.Module):
                     x = blk(x, policy=policy)
                     prev_decision = hard_keep_decision
                 else:
-                    cls_policy = torch.zeros(B, 1,1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
+                    cls_policy = torch.ones(B, 1,1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
                     policy = torch.cat([cls_policy, hard_keep_decision], dim=1)
                     zeros, unzeros = test_irregular_sparsity(p_count, policy)
                     sparse.append([zeros, unzeros])
@@ -458,8 +458,6 @@ class VisionTransformerDiffPruning(nn.Module):
                     prev_decision = hard_keep_decision
                     score = pred_score[:, :, 0:1].cpu().numpy().tolist()
                     score_dict[p_count] = score[0] #144/12=12x30x87x4=125280= 1.5G
-
-
                 p_count += 1
             else:
                 if self.training:
