@@ -318,6 +318,52 @@ class PredictorLG(nn.Module):
         x = torch.cat([local_x, global_x.expand(B, N, C//2)], dim=-1)
         return self.out_conv(x)
 
+class MultiheadPredictorLG(nn.Module):
+    """ Image to Patch Embedding
+    """
+    def __init__(self, num_heads=6, embed_dim=384):
+        super().__init__()
+
+        #print('head_num',num_heads)
+        self.num_heads=num_heads
+        self.embed_dim = embed_dim
+        onehead_in_conv = nn.Sequential(
+            nn.LayerNorm(embed_dim // num_heads),
+            nn.Linear(embed_dim // num_heads, embed_dim // num_heads),
+            nn.GELU()
+        )
+
+        onehead_out_conv = nn.Sequential(
+            nn.Linear(embed_dim // num_heads, embed_dim // num_heads  // 2),
+            nn.GELU(),
+            nn.Linear(embed_dim // num_heads // 2, embed_dim // num_heads // 4),
+            nn.GELU(),
+            nn.Linear(embed_dim // num_heads // 4, 2),
+            nn.LogSoftmax(dim=-1)
+        )
+
+
+        in_conv_list = [onehead_in_conv for _ in range(num_heads)]
+        out_conv_list = [onehead_out_conv for _ in range(num_heads)]
+
+        self.in_conv = nn.ModuleList(in_conv_list)
+        self.out_conv = nn.ModuleList(out_conv_list)
+
+    def forward(self, x, policy):
+
+        multihead_score = 0
+        for i in range(self.num_heads):
+            x_single = x[:,:,self.embed_dim//self.num_heads*i:self.embed_dim//self.num_heads*(i+1)]   #([96, 196, 64])
+            x_single = self.in_conv[i](x_single)
+            B, N, C = x_single.size()       #([96, 196, 64])
+            local_x = x_single[:,:, :C//2]  #([96, 196, 32])
+            global_x = (x_single[:,:, C//2:] * policy).sum(dim=1, keepdim=True) / torch.sum(policy, dim=1, keepdim=True)  #([96, 1, 32])
+            x_single = torch.cat([local_x, global_x.expand(B, N, C//2)], dim=-1)  #([96, 196, 64])
+            score_single=self.out_conv[i](x_single) #([96, 196, 2])
+            multihead_score += score_single
+        multihead_score=multihead_score/self.num_heads
+        return multihead_score
+
 
 class VisionTransformerDiffPruning(nn.Module):
     """ Vision Transformer
@@ -388,7 +434,7 @@ class VisionTransformerDiffPruning(nn.Module):
         # Classifier head
         self.head = nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity()
 
-        predictor_list = [PredictorLG(embed_dim) for _ in range(len(pruning_loc))]
+        predictor_list = [MultiheadPredictorLG(num_heads,embed_dim) for _ in range(len(pruning_loc))]
 
         self.score_predictor = nn.ModuleList(predictor_list)
 
