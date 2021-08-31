@@ -15,7 +15,7 @@ import numpy as np
 
 from utils import batch_index_select
 
-file = 'lvvit_score.json'
+file = 'lvvit_l2_score.json'
 
 def _cfg(url='', **kwargs):
     return {
@@ -167,8 +167,10 @@ class Attention(nn.Module):
         else:
             if policy is None:
                 attn = attn.softmax(dim=-1)
+            elif not self.training:
+                attn = self.softmax_with_policy(attn, policy, 0)
             else:
-                attn = self.softmax_with_policy(attn, policy)
+                attn = self.softmax_with_policy(attn, policy, 1e-6)
         attn = self.attn_drop(attn)
 
         x = (attn @ v).transpose(1, 2).reshape(B, N, self.head_dim* self.num_heads)
@@ -712,31 +714,34 @@ class LVViTDiffPruning(nn.Module):
             if i in self.pruning_loc:
                 spatial_x = x[:, 1:]
                 pred_score = self.score_predictor[p_count](spatial_x, prev_decision).reshape(B, -1, 2)
+                hard_keep_decision = F.gumbel_softmax(pred_score, hard=True)[:, :, 0:1] * prev_decision
                 if self.training:
-                    hard_keep_decision = F.gumbel_softmax(pred_score, hard=True)[:, :, 0:1] * prev_decision
+                    #hard_keep_decision = F.gumbel_softmax(pred_score, hard=True)[:, :, 0:1] * prev_decision
                     out_pred_prob.append(hard_keep_decision.reshape(B, init_n))
                     cls_policy = torch.ones(B, 1, 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
                     policy = torch.cat([cls_policy, hard_keep_decision], dim=1)
                     x = blk(x, policy=policy)
                     prev_decision = hard_keep_decision
                 else:
-                    score = pred_score[:,:,0]
-                    num_keep_node = int(init_n * self.token_ratio[p_count])
-                    keep_policy = torch.argsort(score, dim=1, descending=True)[:, :num_keep_node]
+                    #score = pred_score[:,:,0]
+                    #num_keep_node = int(init_n * self.token_ratio[p_count])
+                    #keep_policy = torch.argsort(score, dim=1, descending=True)[:, :num_keep_node]
                     if self.viz_mode:
                         decisions[p_count].append(keep_policy)
-                    cls_policy = torch.zeros(B, 1, dtype=keep_policy.dtype, device=keep_policy.device)
-                    now_policy = torch.cat([cls_policy, keep_policy + 1], dim=1)
-                    x = batch_index_select(x, now_policy)
-                    prev_decision = batch_index_select(prev_decision, keep_policy)
-                    x = blk(x)
-                    score_dict[p_count] = score.cpu().numpy().tolist()[0]
+                    cls_policy = torch.ones(B, 1,1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
+                    policy = torch.cat([cls_policy, hard_keep_decision], dim=1)
+                    zeros, unzeros = test_irregular_sparsity(p_count, policy)
+                    sparse.append([zeros, unzeros])
+                    x = blk(x, policy=policy)
+                    prev_decision = hard_keep_decision
+                    score = pred_score[:, :, 0:1].cpu().numpy().tolist()
+                    score_dict[p_count] = score[0] #144/12=12x30x87x4=125280= 1.5G
                 p_count += 1
             else:
                 if self.training:
                     x = blk(x, policy)
                 else:
-                    x = blk(x)
+                    x = blk(x, policy=policy)
         
         x = self.norm(x)
         x_cls = self.head(x[:,0])
@@ -754,7 +759,7 @@ class LVViTDiffPruning(nn.Module):
                     json.dump(score_dict, f)
                     f.write('\n')
                 return final_pred, decisions
-            else:
+            else
                 with open(file, 'a') as f: # ins
                     json.dump(score_dict, f)
                     f.write('\n')

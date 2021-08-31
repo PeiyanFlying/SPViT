@@ -124,7 +124,7 @@ def print_dynamic_vit():
 
     print('AvgPool 12/384', AvgPool12(C=384) / 1e9)
     print('DynamicViT 384/0.7', DynamicViT(C=384, rate=0.7) / 1e9)
-    print('Dynamic_Soft_Mask_ViT 384', Dynamic_Soft_Mask_ViT(C=384, sparse=[0.06,0.2,0.526]) / 1e9) #change sparse here
+    print('Dynamic_Soft_Mask_ViT 384', Dynamic_Soft_Mask_ViT(C=384, sparse=[0.54,0.72,0.85]) / 1e9) #change sparse here
     #print('DynamicViT 320/0.7', DynamicViT(C=320, rate=0.7) / 1e9)
     #print('DynamicViT 256/0.7', DynamicViT(C=256, rate=0.7) / 1e9)
     #print('-' * 10)
