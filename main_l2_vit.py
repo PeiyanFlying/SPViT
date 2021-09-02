@@ -24,7 +24,7 @@ import utils
 from functools import partial
 import torch.nn as nn
 from vit_l2 import VisionTransformerDiffPruning, VisionTransformerTeacher, _cfg, checkpoint_filter_fn
-from lvvit import LVViTDiffPruning, LVViT_Teacher
+from lvvit_l2 import LVViTDiffPruning, LVViT_Teacher
 import math
 import shutil
 
@@ -284,9 +284,11 @@ def main(args):
     else:
         print('Attention: mixup/cutmix are not used')
 
+
     base_rate = args.base_rate
+    KEEP_RATE = [base_rate, base_rate ** 2, base_rate ** 3]
     # KEEP_RATE = [1.0, 1.0, 1.0]
-    KEEP_RATE = [0.617,0.369,0.137]
+    # KEEP_RATE = [0.617,0.369,0.137]
 
     if args.arch == 'deit_small':
         PRUNING_LOC = [3,6,9] 
@@ -322,7 +324,7 @@ def main(args):
             p_emb='4_2',skip_lam=2., return_dense=True,mix_token=True,
             pruning_loc=PRUNING_LOC, token_ratio=KEEP_RATE, distill=args.distill
         )
-        model_path = './lvvit_s-224-83.3.pth.tar'
+        model_path = './lvvit_s-26M-224-83.3.pth.tar'
         checkpoint = torch.load(model_path, map_location="cpu")
         model.default_cfg = _cfg()
         missing_keys, unexpected_keys = model.load_state_dict(checkpoint, strict=False)

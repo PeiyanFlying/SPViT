@@ -200,9 +200,9 @@ def get_param_groups(model, weight_decay):
 def adjust_learning_rate(param_groups, init_lr, min_lr, step, max_step, warming_up_step=2, warmup_predictor=False, base_multi=0.1):
     cos_lr = (math.cos(step / max_step * math.pi) + 1) * 0.5
     cos_lr = min_lr + cos_lr * (init_lr - min_lr)
-    if warmup_predictor and step < 1:
+    if warmup_predictor and step < 1: # 在 warmup 阶段，predictor 使用 0.01*init_lr；backbone lr == 0.
         cos_lr = init_lr * 0.01
-    if step < warming_up_step:
+    if step < warming_up_step: # 在一般阶段, predictor 使用 cos_lr. init_lr的cos变化；backbone使用 [0, 0.01] init_lr/predicot [0, 1] init_lr
         backbone_lr = 0
     else:
         backbone_lr = min(init_lr * 0.01, cos_lr)
@@ -285,7 +285,9 @@ def main(args):
         print('Attention: mixup/cutmix are not used')
 
     base_rate = args.base_rate
-    KEEP_RATE = [base_rate, base_rate ** 2, base_rate ** 3]
+    # 我真的意识到了，它真的是自己教自己。。。
+    # KEEP_RATE = [base_rate, base_rate ** 2, base_rate ** 3]
+    KEEP_RATE = [0.617,0.369,0.137]
 
     if args.arch == 'deit_small':
         PRUNING_LOC = [3,6,9] 
@@ -321,7 +323,7 @@ def main(args):
             p_emb='4_2',skip_lam=2., return_dense=True,mix_token=True,
             pruning_loc=PRUNING_LOC, token_ratio=KEEP_RATE, distill=args.distill
         )
-        model_path = './lvvit_s-224-83.3.pth.tar'
+        model_path = './lvvit_s-26M-224-83.3.pth.tar'
         checkpoint = torch.load(model_path, map_location="cpu")
         model.default_cfg = _cfg()
         missing_keys, unexpected_keys = model.load_state_dict(checkpoint, strict=False)
@@ -404,7 +406,7 @@ def main(args):
 
         model.load_state_dict(checkpoint_model, strict=False)
 
-    model = nn.DataParallel(model)
+    # model = nn.DataParallel(model)
     model.to(device)
 
     model_ema = None

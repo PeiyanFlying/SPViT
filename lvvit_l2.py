@@ -12,6 +12,7 @@ import torch.nn as nn
 
 from timm.models.layers import trunc_normal_
 import numpy as np
+import json
 
 from utils import batch_index_select
 
@@ -588,7 +589,6 @@ class MultiheadPredictorLG(nn.Module):
         return multihead_score
 
 
-
 class LVViTDiffPruning(nn.Module):
     """ Vision Transformer with tricks
     Arguements:
@@ -648,7 +648,7 @@ class LVViTDiffPruning(nn.Module):
         self.mix_token=mix_token
 
         
-        predictor_list = [MultiheadPredictorLG(embed_dim) for _ in range(len(pruning_loc))]
+        predictor_list = [MultiheadPredictorLG(num_heads,embed_dim) for _ in range(len(pruning_loc))]
 
         self.score_predictor = nn.ModuleList(predictor_list)
 
@@ -705,6 +705,7 @@ class LVViTDiffPruning(nn.Module):
         p_count = 0
         out_pred_prob = []
         score_dict = {}
+        sparse = []
         init_n = 14 * 14
         prev_decision = torch.ones(B, init_n, 1, dtype=x.dtype, device=x.device)
         policy = torch.ones(B, init_n + 1, 1, dtype=x.dtype, device=x.device)
@@ -726,9 +727,9 @@ class LVViTDiffPruning(nn.Module):
                     #score = pred_score[:,:,0]
                     #num_keep_node = int(init_n * self.token_ratio[p_count])
                     #keep_policy = torch.argsort(score, dim=1, descending=True)[:, :num_keep_node]
-                    if self.viz_mode:
-                        decisions[p_count].append(keep_policy)
-                    cls_policy = torch.ones(B, 1,1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
+                    # if self.viz_mode:
+                    #     decisions[p_count].append(keep_policy)
+                    cls_policy = torch.ones(B, 1, 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
                     policy = torch.cat([cls_policy, hard_keep_decision], dim=1)
                     zeros, unzeros = test_irregular_sparsity(p_count, policy)
                     sparse.append([zeros, unzeros])
@@ -754,16 +755,10 @@ class LVViTDiffPruning(nn.Module):
             else:
                 return final_pred, out_pred_prob
         else:
-            if self.viz_mode:
-                with open(file, 'a') as f: # ins
-                    json.dump(score_dict, f)
-                    f.write('\n')
-                return final_pred, decisions
-            else
-                with open(file, 'a') as f: # ins
-                    json.dump(score_dict, f)
-                    f.write('\n')
-                return final_pred
+            with open(file, 'a') as f: # ins
+                json.dump(score_dict, f)
+                f.write('\n')
+            return final_pred, sparse
 
 class LVViT_Teacher(nn.Module):
     """ Vision Transformer with tricks
@@ -873,3 +868,18 @@ class LVViT_Teacher(nn.Module):
         x_cls = self.head(x[:,0])
         x_aux = self.aux_head(x[:,1:])
         return x_cls, x_aux
+
+
+def test_irregular_sparsity(name,matrix):
+
+    # continue
+    zeros = np.sum(matrix.cpu().detach().numpy() == 0)
+
+    non_zeros = np.sum(matrix.cpu().detach().numpy() != 0)
+
+    # print(name, non_zeros)
+    print(" {}, all weights: {}, irregular zeros: {}, irregular sparsity is: {:.4f}".format( name, zeros+non_zeros, zeros, zeros / (zeros + non_zeros)))
+    # print(non_zeros+zeros)
+    # total_nonzeros += 128000
+
+    return zeros,non_zeros
