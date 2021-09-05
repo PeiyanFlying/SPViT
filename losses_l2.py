@@ -8,6 +8,7 @@ from torch.nn.modules.loss import MSELoss, BCEWithLogitsLoss, CrossEntropyLoss
 from utils import batch_index_select
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 import math
+from numpy import linalg as LA
 
 class DistillationLoss(torch.nn.Module):
     """
@@ -171,16 +172,20 @@ class DistillDiffPruningLoss(torch.nn.Module):
 
         pred, token_pred, mask, out_pred_score = outputs
 
-
         pred_loss = 0.0
+
+        ratio = self.keep_ratio
         for i, score in enumerate(out_pred_score):
-            pred_loss += score.abs().mean() * self.keep_ratio[i]
+            if self.dynamic:
+                pos_ratio = score.mean()
+            else:
+                pos_ratio = score.mean()
+            pred_loss = pred_loss + ((pos_ratio - ratio[i]) ** 2).mean()
 
         cls_loss = self.base_criterion(pred, labels)
 
         with torch.no_grad():
             cls_t, token_t = self.teacher_model(inputs)
-
 
         cls_kl_loss = F.kl_div(
                 F.log_softmax(pred, dim=-1),
@@ -194,39 +199,32 @@ class DistillDiffPruningLoss(torch.nn.Module):
 
         # print(mask)
 
-        # bool_mask = mask.reshape(B*N) > 0.5
-        # print('====================')
-        # print(mask.size())
-        bool_mask = mask.repeat(1,1,C).reshape(B*N, C)
-        # print(bool_mask.size())
-        # print('------')
-
+        bool_mask = mask.reshape(B*N) > 0.5
 
         token_pred = token_pred.reshape(B*N, C)
         token_t = token_t.reshape(B*N, C)
-        # print(token_t.size())
-        # print(token_pred.size()) 维度都是对对
-        # print('====================')
 
         if mask.sum() < 0.1:
             token_kl_loss = token_pred.new(1,).fill_(0.0)
         else:
-            token_t = token_t
-            token_pred = token_pred
+            token_t = token_t[bool_mask]
+            token_pred = token_pred[bool_mask]
             if self.mse_token:
-                kl_tm = torch.pow(token_pred - token_t, 2)*bool_mask
-                token_kl_loss = kl_tm.mean()
+                token_kl_loss = torch.pow(token_pred - token_t, 2).mean()
             else:
+                print('token_pred:',token_pred)
+                print('token_t:',token_t)
                 token_kl_loss = F.kl_div(
                         F.log_softmax(token_pred, dim=-1),
                         F.log_softmax(token_t, dim=-1),
                         reduction='batchmean',
                         log_target=True
                     )
-
-        loss = self.clf_weight * cls_loss + self.ratio_weight * pred_loss/len(self.pruning_loc) + self.distill_weight * cls_kl_loss + self.distill_weight * token_kl_loss
-        # if self.count % 20:
-        #     print('loss info: cls_loss=%.4f, ratio_loss=%.4f, cls_kl=%.4f, token_kl=%.4f' % (cls_loss, pred_loss , cls_kl_loss, token_kl_loss))
+        # print(token_pred - token_t)
+        
+        # print(cls_loss, pred_loss)
+        loss = self.clf_weight * cls_loss + self.ratio_weight * pred_loss / len(self.pruning_loc) + self.distill_weight * cls_kl_loss + self.distill_weight * token_kl_loss
+        # print('loss info: cls_loss=%.4f, ratio_loss=%.4f, cls_kl=%.4f, token_kl=%.4f' % (cls_loss, pred_loss, cls_kl_loss, token_kl_loss))
         if self.print_mode:
             self.cls_loss += cls_loss.item()
             self.ratio_loss += pred_loss.item()

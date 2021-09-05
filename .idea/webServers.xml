@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="0fe7e5b5-1a42-4d10-8dc6-ee3153f64d82" name="ali-a100-121">
+        <fileTransfer accessType="SFTP" host="8.140.97.121" port="22" sshConfigId="997b80a8-d21b-44ba-a08f-b82d56811420" sshConfig="northeastern.univ@8.140.97.121:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>

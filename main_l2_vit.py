@@ -17,13 +17,13 @@ from timm.utils import NativeScaler, get_state_dict, ModelEma
 from torch.nn import parameter
 
 from datasets import build_dataset
-from engine_soft import train_one_epoch, evaluate
-from losses_soft import DistillationLoss, DiffPruningLoss, DistillDiffPruningLoss
+from engine_l2 import train_one_epoch, evaluate
+from losses_l2 import DistillationLoss, DiffPruningLoss, DistillDiffPruningLoss
 from samplers import RASampler
 import utils
 from functools import partial
 import torch.nn as nn
-from vit_soft import VisionTransformerDiffPruning, VisionTransformerTeacher, _cfg, checkpoint_filter_fn
+from vit_l2 import VisionTransformerDiffPruning, VisionTransformerTeacher, _cfg, checkpoint_filter_fn
 from lvvit import LVViTDiffPruning, LVViT_Teacher
 import math
 import shutil
@@ -37,7 +37,7 @@ def get_args_parser():
     parser.add_argument('--arch', default='deit_small', type=str, help='Name of model to train')
     parser.add_argument('--input-size', default=224, type=int, help='images input size')
     parser.add_argument('--distillw', type=float, default=0.5, help='distill rate (default: 0.5)')
-    parser.add_argument('--ratiow', type=float, default=0.1, metavar='PCT', help='ratio rate (default: 2.0)')
+    parser.add_argument('--ratiow', type=float, default=2.0, metavar='PCT', help='ratio rate (default: 2.0)')
     parser.add_argument('--drop', type=float, default=0.0, metavar='PCT',
                         help='Dropout rate (default: 0.)')
     parser.add_argument('--drop-path', type=float, default=0.1, metavar='PCT',
@@ -213,7 +213,6 @@ def adjust_learning_rate(param_groups, init_lr, min_lr, step, max_step, warming_
         else:
             param_group['lr'] = backbone_lr # init_lr * 0.01 # cos_lr * base_multi
 
-
 def main(args):
     utils.init_distributed_mode(args)
 
@@ -286,7 +285,8 @@ def main(args):
         print('Attention: mixup/cutmix are not used')
 
     base_rate = args.base_rate
-    KEEP_RATE = [1.0, 1.0, 1.0]
+    # KEEP_RATE = [1.0, 1.0, 1.0]
+    KEEP_RATE = [0.617,0.369,0.137]
 
     if args.arch == 'deit_small':
         PRUNING_LOC = [3,6,9] 
@@ -510,7 +510,6 @@ def main(args):
             args.clip_grad, model_ema, mixup_fn,
             set_training_mode=args.finetune == '' # keep in eval mode during finetuning
         )
-
 
         # lr_scheduler.step(epoch)
         if args.output_dir:

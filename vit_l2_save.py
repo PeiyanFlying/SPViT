@@ -27,7 +27,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-import json
 
 from utils import batch_index_select
 
@@ -35,7 +34,6 @@ from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 
 _logger = logging.getLogger(__name__)
-file = 'score.json'
 
 
 def _cfg(url='', **kwargs):
@@ -170,7 +168,7 @@ class Attention(nn.Module):
 
     def softmax_with_policy(self, attn, policy, eps=1e-6):
         B, N, _ = policy.size()
-        B, H, N, N = attn.size()  #([96, 6, 197, 197])
+        B, H, N, N = attn.size()
         attn_policy = policy.reshape(B, 1, 1, N)  # * policy.reshape(B, 1, N, 1)
         eye = torch.eye(N, dtype=attn_policy.dtype, device=attn_policy.device).view(1, 1, N, N)
         attn_policy = attn_policy + (1.0 - attn_policy) * eye
@@ -184,24 +182,41 @@ class Attention(nn.Module):
         attn = (attn + eps/N) / (attn.sum(dim=-1, keepdim=True) + eps)
         return attn.type_as(max_att)
 
-    def forward(self, x, policy):
-        B, N, C = x.shape  # ([96, 197, 384]) batch 96, channel 384, because deit-small 6 head
-        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4) #qkv [3, 96, 6, 197, 64]
-        q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)   # q ([96, 6, 197, 64])
+    def softmax_with_policy_evaluation(self, attn, policy, eps=1e-6):
+        B, N, _ = policy.size()
+        B, H, N, N = attn.size()
 
-        attn = (q @ k.transpose(-2, -1)) * self.scale   #([96, 6, 197, 197])
+        attn_policy = policy*(policy.reshape(B,1,N))
+        attn_policy = attn_policy.reshape(B,1,N,N)
+        max_att = torch.max(attn, dim=-1, keepdim=True)[0]
+        attn = attn - max_att
+
+        attn = attn.to(torch.float32).exp_() * attn_policy.to(torch.float32)
+        attn = (attn) / (attn.sum(dim=-1, keepdim=True))
+
+        zero = torch.zeros_like(attn)
+        attn = torch.where(torch.isnan(attn), zero, attn)
+        return attn.type_as(max_att)
+
+    def forward(self, x, policy):
+        B, N, C = x.shape
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
+
+        attn = (q @ k.transpose(-2, -1)) * self.scale
 
         if policy is None:
             attn = attn.softmax(dim=-1)
-        else:
+        elif (policy is not None) and (self.training):
             attn = self.softmax_with_policy(attn, policy)
+        elif (policy is not None) and (not self.training):
+            attn = self.softmax_with_policy_evaluation(attn, policy)
 
         x = (attn @ v).transpose(1, 2).reshape(B, N, C)
 
         x = self.proj(x)
         x = self.proj_drop(x)
         return x
-
 
 
 class Block(nn.Module):
@@ -316,51 +331,6 @@ class PredictorLG(nn.Module):
         x = torch.cat([local_x, global_x.expand(B, N, C//2)], dim=-1)
         return self.out_conv(x)
 
-class MultiheadPredictorLG(nn.Module):
-    """ Image to Patch Embedding
-    """
-    def __init__(self, num_heads=6, embed_dim=384):
-        super().__init__()
-
-        #print('head_num',num_heads)
-        self.num_heads=num_heads
-        self.embed_dim = embed_dim
-        onehead_in_conv = nn.Sequential(
-            nn.LayerNorm(embed_dim // num_heads),
-            nn.Linear(embed_dim // num_heads, embed_dim // num_heads),
-            nn.GELU()
-        )
-
-        onehead_out_conv = nn.Sequential(
-            nn.Linear(embed_dim // num_heads, embed_dim // num_heads  // 2),
-            nn.GELU(),
-            nn.Linear(embed_dim // num_heads // 2, embed_dim // num_heads // 4),
-            nn.GELU(),
-            nn.Linear(embed_dim // num_heads // 4, 2),
-            nn.LogSoftmax(dim=-1)
-        )
-
-
-        in_conv_list = [onehead_in_conv for _ in range(num_heads)]
-        out_conv_list = [onehead_out_conv for _ in range(num_heads)]
-
-        self.in_conv = nn.ModuleList(in_conv_list)
-        self.out_conv = nn.ModuleList(out_conv_list)
-
-    def forward(self, x, policy):
-
-        multihead_score = 0
-        for i in range(self.num_heads):
-            x_single = x[:,:,self.embed_dim//self.num_heads*i:self.embed_dim//self.num_heads*(i+1)]   #([96, 196, 64])
-            x_single = self.in_conv[i](x_single)
-            B, N, C = x_single.size()       #([96, 196, 64])
-            local_x = x_single[:,:, :C//2]  #([96, 196, 32])
-            global_x = (x_single[:,:, C//2:] * policy).sum(dim=1, keepdim=True) / torch.sum(policy, dim=1, keepdim=True)  #([96, 1, 32])
-            x_single = torch.cat([local_x, global_x.expand(B, N, C//2)], dim=-1)  #([96, 196, 64])
-            score_single=self.out_conv[i](x_single) #([96, 196, 2])
-            multihead_score += score_single
-        multihead_score=multihead_score/self.num_heads
-        return multihead_score
 
 class VisionTransformerDiffPruning(nn.Module):
     """ Vision Transformer
@@ -431,7 +401,7 @@ class VisionTransformerDiffPruning(nn.Module):
         # Classifier head
         self.head = nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity()
 
-        predictor_list = [MultiheadPredictorLG(num_heads,embed_dim) for _ in range(len(pruning_loc))]
+        predictor_list = [PredictorLG(embed_dim) for _ in range(len(pruning_loc))]
 
         self.score_predictor = nn.ModuleList(predictor_list)
 
@@ -475,38 +445,39 @@ class VisionTransformerDiffPruning(nn.Module):
 
         p_count = 0
         out_pred_prob = []
-        score_dict = {}
         init_n = 14 * 14
+        sparse = []
         prev_decision = torch.ones(B, init_n, 1, dtype=x.dtype, device=x.device)
         policy = torch.ones(B, init_n + 1, 1, dtype=x.dtype, device=x.device)
+        now_policy = torch.ones(B, init_n + 1, 1, dtype=x.dtype, device=x.device)
         for i, blk in enumerate(self.blocks):
             if i in self.pruning_loc:
-                spatial_x = x[:, 1:] #([96, 196, 384]) remove second token
-                pred_score = self.score_predictor[p_count](spatial_x, prev_decision).reshape(B, -1, 2)  #go in predictor,print 6 lists 1 list ([96, 196, 2])
-
+                spatial_x = x[:, 1:]
+                pred_score = self.score_predictor[p_count](spatial_x, prev_decision).reshape(B, -1, 2)
+                hard_keep_decision = F.gumbel_softmax(pred_score, hard=True)[:, :, 0:1] * prev_decision
                 if self.training:
-                    hard_keep_decision = F.gumbel_softmax(pred_score, hard=True)[:, :, 0:1] * prev_decision
+                    #hard_keep_decision = F.gumbel_softmax(pred_score, hard=True)[:, :, 0:1] * prev_decision
                     out_pred_prob.append(hard_keep_decision.reshape(B, init_n))
                     cls_policy = torch.ones(B, 1, 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
-                    policy = torch.cat([cls_policy, hard_keep_decision], dim=1) #([96, 197, 1])
+                    policy = torch.cat([cls_policy, hard_keep_decision], dim=1)
                     x = blk(x, policy=policy)
                     prev_decision = hard_keep_decision
                 else:
-                    score = pred_score[:,:,0]
-                    num_keep_node = int(init_n * self.token_ratio[p_count])
-                    keep_policy = torch.argsort(score, dim=1, descending=True)[:, :num_keep_node]
-                    cls_policy = torch.zeros(B, 1, dtype=keep_policy.dtype, device=keep_policy.device)
-                    now_policy = torch.cat([cls_policy, keep_policy + 1], dim=1)
-                    x = batch_index_select(x, now_policy)
-                    prev_decision = batch_index_select(prev_decision, keep_policy)
-                    x = blk(x)
-                    score_dict[p_count] = score.cpu().numpy().tolist()[0]
+                    #score = pred_score[:,:,0]
+                    #num_keep_node = int(init_n * self.token_ratio[p_count])
+                    #keep_policy = torch.argsort(score, dim=1, descending=True)[:, :num_keep_node]
+                    cls_policy = torch.zeros(B, 1,1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
+                    now_policy = torch.cat([cls_policy, hard_keep_decision], dim=1)
+                    zeros, unzeros = test_irregular_sparsity(p_count, now_policy)
+                    sparse.append([zeros, unzeros])
+                    x = blk(x*now_policy, policy=now_policy)
+                    prev_decision = hard_keep_decision
                 p_count += 1
             else:
                 if self.training:
                     x = blk(x, policy)
                 else:
-                    x = blk(x)
+                    x = blk(x*now_policy, policy=now_policy)
 
         x = self.norm(x)
         features = x[:, 1:]
@@ -520,10 +491,7 @@ class VisionTransformerDiffPruning(nn.Module):
             else:
                 return x, out_pred_prob
         else:
-            with open(file, 'a') as f: # ins
-                json.dump(score_dict, f)
-                f.write('\n')
-            return x
+            return x, sparse
 
 class VisionTransformerTeacher(nn.Module):
     """ Vision Transformer
@@ -673,4 +641,17 @@ def checkpoint_filter_fn(state_dict, model):
         out_dict[k] = v
     return out_dict
 
+def test_irregular_sparsity(name,matrix):
+
+    # continue
+    zeros = np.sum(matrix.cpu().detach().numpy() == 0)
+
+    non_zeros = np.sum(matrix.cpu().detach().numpy() != 0)
+
+    # print(name, non_zeros)
+    print(" {}, all weights: {}, irregular zeros: {}, irregular sparsity is: {:.4f}".format( name, zeros+non_zeros, zeros, zeros / (zeros + non_zeros)))
+    # print(non_zeros+zeros)
+    # total_nonzeros += 128000
+
+    return zeros,non_zeros
 

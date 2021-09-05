@@ -27,6 +27,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 10
+    # i = 0
 
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
         samples = samples.to(device, non_blocking=True)
@@ -57,6 +58,10 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         if model_ema is not None:
             model_ema.update(model)
 
+        # i+=1
+        #
+        # if i > 50: break
+
         metric_logger.update(loss=loss_value)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
     # gather the stats from all processes
@@ -74,7 +79,12 @@ def evaluate(data_loader, model, device):
 
     # switch to evaluation mode
     model.eval()
-
+    zero_0 = 0
+    unzero_0 = 0
+    zero_1 = 0
+    unzero_1 = 0
+    zero_2 = 0
+    unzero_2 = 0
 
     for images, target in metric_logger.log_every(data_loader, 10, header):
         images = images.to(device, non_blocking=True)
@@ -82,11 +92,17 @@ def evaluate(data_loader, model, device):
 
         # compute output
         with torch.cuda.amp.autocast():
-            output = model(images)
+            output_all = model(images)
+            output, sparse = output_all
             loss = criterion(output, target)
 
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
-
+        zero_0 +=sparse[0][0]
+        unzero_0 +=sparse[0][1]
+        zero_1 +=sparse[1][0]
+        unzero_1 +=sparse[1][1]
+        zero_2 +=sparse[2][0]
+        unzero_2 +=sparse[2][1]
 
 
         batch_size = images.shape[0]
@@ -95,6 +111,8 @@ def evaluate(data_loader, model, device):
         metric_logger.meters['acc5'].update(acc5.item(), n=batch_size)
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
+
+    print('Sparsity0:{},Sparsity1:{},Sparsity2:{},'.format(zero_0/(zero_0+unzero_0),zero_1/(zero_1+unzero_1),zero_2/(zero_2+unzero_2)))
     print('* Acc@1 {top1.global_avg:.3f} Acc@5 {top5.global_avg:.3f} loss {losses.global_avg:.3f}'
           .format(top1=metric_logger.acc1, top5=metric_logger.acc5, losses=metric_logger.loss))
 
