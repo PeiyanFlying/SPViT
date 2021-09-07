@@ -157,8 +157,6 @@ class Mlp(nn.Module):
         x = self.drop(x)
         return x
 
-
-
 class Attention(nn.Module):
     def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0.):
         super().__init__()
@@ -358,7 +356,6 @@ class MultiheadPredictorLG(nn.Module):
         self.in_conv = nn.ModuleList(in_conv_list)
         self.out_conv = nn.ModuleList(out_conv_list)
 
-
     def forward(self, x, policy):
 
         multihead_score = 0
@@ -370,7 +367,7 @@ class MultiheadPredictorLG(nn.Module):
             local_x = x_single[:,:, :C//2]  #([96, 196, 32])
             global_x = (x_single[:,:, C//2:] * policy).sum(dim=1, keepdim=True) / torch.sum(policy, dim=1, keepdim=True)  #([96, 1, 32])
             x_single = torch.cat([local_x, global_x.expand(B, N, C//2)], dim=-1)  #([96, 196, 64])
-            x_single = self.out_conv[i](x_single)  # move the logsoftmax operation out of out_conv ([96, 196, 2])
+            x_single = self.out_conv[i](x_single) #([96, 196, 2])
 
             # for placeholder
             m = nn.Softmax(dim=-1)
@@ -426,6 +423,7 @@ class VisionTransformerDiffPruning(nn.Module):
         self.num_classes = num_classes
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
         norm_layer = norm_layer or partial(nn.LayerNorm, eps=1e-6)
+        self.depth = depth
 
         if hybrid_backbone is not None:
             self.patch_embed = HybridEmbed(
@@ -507,43 +505,41 @@ class VisionTransformerDiffPruning(nn.Module):
         init_n = 14 * 14
         sparse = []
         score_dict = {}
-        prev_decision = torch.ones(B, init_n, 1, dtype=x.dtype, device=x.device)
         policy = torch.ones(B, init_n + 1, 1, dtype=x.dtype, device=x.device)
         for i, blk in enumerate(self.blocks):
             if i in self.pruning_loc:
-                #print('predictor:',i)
+                ### token selection (mask & weighted score)
                 prev_decision = torch.ones(B, init_n, 1, dtype=x.dtype, device=x.device)  # initialize before each predictor
                 spatial_x = x[:, 1:]
-                pred_score, softmax_score = self.score_predictor[p_count](spatial_x, prev_decision)#.reshape(B, -1, 2)
+                pred_score, softmax_score = self.score_predictor[p_count](spatial_x, prev_decision) # 以上三者是selection,之后兵分两路
                 pred_score = pred_score.reshape(B, -1, 2)
                 softmax_score = softmax_score.reshape(B, -1, 2)
-                #hard_keep_decision = F.gumbel_softmax(pred_score, hard=True)[:, :, 0:1] * prev_decision
-                hard_decision = F.gumbel_softmax(pred_score, hard=True)#[:, :, 0:1]  # * prev_decision
-                hard_keep_decision = hard_decision[:, :, 0:1]
-                hard_drop_decision = hard_decision[:, :, 1:]
+                #-------------------- 确定 informative token 和 placeholder 的 mask
+                hard_decision = F.gumbel_softmax(pred_score, hard=True)#[:, :, 0:1]  # * prev_decision  保存！
+                hard_keep_decision = hard_decision[:, :, 0]
+                hard_drop_decision = hard_decision[:, :, 1] # 利用 pre_score 得到 informative token 和 keep token
+                ############### end
 
-                ###get placeholder weights
-                placeholder_weights = spatial_x * hard_drop_decision
+                placeholder_weights = spatial_x * hard_drop_decision # 得到 placeholder 的vector 保存！
 
                 ###get representative token  (regularization)
-                softmax_score = softmax_score[:, :, 0:1]  # softmax score of all tokens
-                placeholder_score = softmax_score * hard_drop_decision  #score of only placeholder tokens
-                x2 = spatial_x * placeholder_score  # token weight multiply by their score --> ([96, 196, 384])
-                x2_sum = torch.sum(x2, 1)  # sum by the N dimension, output (B,N,C)-->(B,C)
-                x2_sum = torch.unsqueeze(x2_sum, dim=1)  # resize to (B,1,C)  [96, 1, 384]
-
-                placeholder_score_sum = torch.sum(placeholder_score, 1)  # sum of token score, [96, 196, 1]-->[96, 1]
+                softmax_score = softmax_score[:, :, 0]  # softmax score of all tokens to keep
+                placeholder_score = softmax_score * hard_drop_decision  #keep score of only placeholder tokens
+                x2 = spatial_x * placeholder_score  # 被加权后的 placehoder score [96, 196, 384]
+                x2_sum = torch.sum(x2, dim=1)  # sum by the N dimension, output (B,N,C)-->(B,C) [96, 384]
+                x2_sum = torch.unsqueeze(x2_sum, dim=1)  # resize to (B,1,C)  [96, 1, 384] 加权后的平均 token
+                #--------------------
+                placeholder_score_sum = torch.sum(placeholder_score, dim=1)  # sum of token score, [96, 196, 1]-->[96, 1]
                 placeholder_score_sum = torch.unsqueeze(placeholder_score_sum, dim=1)  # resize to [96, 1, 1]
+                #--------------------
+                represent_token = x2_sum / placeholder_score_sum  # regularization --> [96, 1, 384] 被正则化后的 representitave token
 
-                represent_token = x2_sum / placeholder_score_sum  # regularization --> [96, 1, 384]
-
-                x = torch.cat((x, represent_token), dim=1)  # concat rep. token to full x: 197-->198
+                x = torch.cat((x, represent_token), dim=1)  # concat rep. token to full x: 197-->198 [cls, token, representive] 但是，sparse 是加在 token 上的
+                ############### end
 
                 if self.training:
-                    #hard_keep_decision = F.gumbel_softmax(pred_score, hard=True)[:, :, 0:1] * prev_decision
                     out_pred_prob.append(hard_keep_decision.reshape(B, init_n))
                     cls_policy = torch.ones(B, 1, 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
-                    # add rep to policy, set as one
                     rep_policy = torch.ones(B, 1, 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
                     policy = torch.cat([cls_policy, hard_keep_decision, rep_policy], dim=1)
                     x, rep_1, rep_2 = blk(x, policy=policy, i=i)   #when i=None, means no output rep. token. Such as first 3 layers.
@@ -557,70 +553,55 @@ class VisionTransformerDiffPruning(nn.Module):
                     prev_decision = hard_keep_decision
                 else:
                     cls_policy = torch.ones(B, 1,1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
-                    # add rep to policy, set as one
                     rep_policy = torch.ones(B, 1, 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
-
                     policy = torch.cat([cls_policy, hard_keep_decision, rep_policy], dim=1)
+                    x, rep_1, rep_2 = blk(x, policy=policy, i=i)   #when i=None, means no output rep. token. Such as first 3 layers.
+
+                    #copy rep. token and add to placeholder
+                    N_w = placeholder_weights.shape[1]  #N dimention is 196
+                    rep_1 = rep_1.repeat(1, N_w, 1) * hard_drop_decision   #expand ([96, 1, 384]) --> ([96, 196, 384])  but only copy the placeholder token weights, rest of them is zero
+                    rep_2 = rep_2.repeat(1, N_w, 1) * hard_drop_decision
+                    placeholder_weights = (placeholder_weights + rep_1 + rep_2)/3
+
                     zeros, unzeros = test_irregular_sparsity(p_count, policy)
                     sparse.append([zeros, unzeros])
-                    x = blk(x, policy=policy)
                     prev_decision = hard_keep_decision
                     score = pred_score[:, :, 0:1].cpu().numpy().tolist()
                     score_dict[p_count] = score[0]
                 p_count += 1
 
-            ## first 3 layers. No rep token, placeholder, etc.
+            ### first 3 layers. No rep token, placeholder, etc.
             elif i < self.pruning_loc[0]:
-                if self.training:
-                    x = blk(x, policy)
-                else:
-                    x = blk(x, policy=policy)
+                x = blk(x, policy)
+            ############### end
 
-            ## last layer of each stage, but not consider layer before 1st predictor
-            elif i == 11 or i+1 in self.pruning_loc[1:]:
-                if self.training:
-                    C_w = x.shape[2]
-                    x, rep_1, rep_2 = blk(x, policy, i=i)
+            ### last layer of each stage, but not consider layer before 1st predictor. placeholder updated
+            elif i == (self.depth - 1) or i+1 in self.pruning_loc[1:]:
+                C_w = x.shape[2]
+                x, rep_1, rep_2 = blk(x, policy, i=i)
+                ### copy rep. token and add to placeholder
+                N_w = placeholder_weights.shape[1]
+                rep_1 = rep_1.repeat(1, N_w, 1) * hard_drop_decision
+                rep_2 = rep_2.repeat(1, N_w, 1) * hard_drop_decision
+                placeholder_weights = (placeholder_weights + rep_1 + rep_2)/3  #([96, 196, 384])
+                ######### end
 
-                    x = x[:, :-1] #end of stage, remove rep token
+                x = x[:, :-1]
 
-                    # copy rep. token and add to placeholder
-                    N_w = placeholder_weights.shape[1]
-                    rep_1 = rep_1.repeat(1, N_w, 1) * hard_drop_decision
-                    rep_2 = rep_2.repeat(1, N_w, 1) * hard_drop_decision
-                    placeholder_weights = (placeholder_weights + rep_1 + rep_2)/3  #([96, 196, 384])
-
-                    # add placeholder back to x
-                    cls_placeholder = torch.zeros(B, 1, C_w, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device) #([96, 1, 384])
-                    placeholder_weights_addcls = torch.cat([cls_placeholder, placeholder_weights], dim=1) #([96, 197, 384])
-                    x = x + placeholder_weights_addcls
-                else:
-                    C_w = x.shape[2]
-                    x, rep_1, rep_2 = blk(x, policy=policy, i=i)
-
-                    x = x[:, :-1] #end of stage, remove rep token
-
-                    # copy rep. token and add to placeholder
-                    N_w = placeholder_weights.shape[1]
-                    rep_1 = rep_1.repeat(1, N_w, 1) * hard_drop_decision
-                    rep_2 = rep_2.repeat(1, N_w, 1) * hard_drop_decision
-                    placeholder_weights = (placeholder_weights + rep_1 + rep_2) / 3  #([96, 196, 384])
-
-                    # add placeholder back to x
-                    cls_placeholder = torch.zeros(B, 1, C_w, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device) #([96, 1, 384])
-                    placeholder_weights_addcls = torch.cat([cls_placeholder, placeholder_weights], dim=1) #([96, 197, 384])
-                    x = x + placeholder_weights_addcls
+                # add placeholder back to x
+                cls_placeholder = torch.zeros(B, 1, C_w, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device) #([96, 1, 384])
+                placeholder_weights_addcls = torch.cat([cls_placeholder, placeholder_weights], dim=1) #([96, 197, 384])
+                cls_policy = torch.ones(B, 1, 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
+                policy_up = torch.cat([cls_policy, hard_keep_decision], dim=1)
+                x = x * policy_up + placeholder_weights_addcls
 
             else:  #other in stage layers
-                if self.training:
-                    x, rep_1, rep_2 = blk(x, policy, i=i)
+                x, rep_1, rep_2 = blk(x, policy, i=i)
 
-                    N_w = placeholder_weights.shape[1]
-                    rep_1 = rep_1.repeat(1, N_w, 1) * hard_drop_decision
-                    rep_2 = rep_2.repeat(1, N_w, 1) * hard_drop_decision
-                    placeholder_weights = (placeholder_weights + rep_1 + rep_2) / 3
-                else:
-                    x = blk(x, policy=policy)
+                N_w = placeholder_weights.shape[1]
+                rep_1 = rep_1.repeat(1, N_w, 1) * hard_drop_decision
+                rep_2 = rep_2.repeat(1, N_w, 1) * hard_drop_decision
+                placeholder_weights = (placeholder_weights + rep_1 + rep_2) / 3
 
 
         x = self.norm(x)
