@@ -21,6 +21,7 @@ from engine_l2 import train_one_epoch, evaluate
 from losses_l2 import DistillationLoss, DiffPruningLoss, DistillDiffPruningLoss
 from samplers import RASampler
 import utils
+from utils import SoftTargetCrossEntropy_max
 from functools import partial
 import torch.nn as nn
 from vit_l2 import VisionTransformerDiffPruning, VisionTransformerTeacher, _cfg, checkpoint_filter_fn
@@ -75,7 +76,7 @@ def get_args_parser():
                         help='learning rate noise std-dev (default: 1.0)')
     parser.add_argument('--warmup-lr', type=float, default=1e-6, metavar='LR',
                         help='warmup learning rate (default: 1e-6)')
-    parser.add_argument('--min-lr', type=float, default=1e-5, metavar='LR',
+    parser.add_argument('--min-lr', type=float, default=2e-5, metavar='LR',
                         help='lower lr bound for cyclic schedulers that hit 0 (1e-5)')
 
     parser.add_argument('--decay-epochs', type=float, default=30, metavar='N',
@@ -151,7 +152,7 @@ def get_args_parser():
                         help='path where to save, empty for no saving')
     parser.add_argument('--device', default='cuda',
                         help='device to use for training / testing')
-    parser.add_argument('--seed', default=0, type=int)
+    parser.add_argument('--seed', default=42, type=int)
     parser.add_argument('--resume', default='', help='resume from checkpoint')
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
                         help='start epoch')
@@ -198,6 +199,8 @@ def get_param_groups(model, weight_decay):
 
 
 def adjust_learning_rate(param_groups, init_lr, min_lr, step, max_step, warming_up_step=2, warmup_predictor=False, base_multi=0.1):
+    if step >= 22:
+        init_lr = 5e-4 
     cos_lr = (math.cos(step / max_step * math.pi) + 1) * 0.5
     cos_lr = min_lr + cos_lr * (init_lr - min_lr)
     if warmup_predictor and step < 1:

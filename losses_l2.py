@@ -9,6 +9,7 @@ from utils import batch_index_select
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 import math
 from numpy import linalg as LA
+import math
 
 class DistillationLoss(torch.nn.Module):
     """
@@ -182,6 +183,7 @@ class DistillDiffPruningLoss(torch.nn.Module):
                 pos_ratio = score.mean()
             pred_loss = pred_loss + ((pos_ratio - ratio[i]) ** 2).mean()
 
+
         cls_loss = self.base_criterion(pred, labels)
 
         with torch.no_grad():
@@ -193,6 +195,8 @@ class DistillDiffPruningLoss(torch.nn.Module):
                 reduction='batchmean',
                 log_target=True
             )
+
+
 
         B, N, C = token_pred.size()
         assert mask.numel() == B * N
@@ -212,19 +216,18 @@ class DistillDiffPruningLoss(torch.nn.Module):
             if self.mse_token:
                 token_kl_loss = torch.pow(token_pred - token_t, 2).mean()
             else:
-                # print('token_pred:',token_pred)
-                # print('token_t:',token_t)
                 token_kl_loss = F.kl_div(
                         F.log_softmax(token_pred, dim=-1),
                         F.log_softmax(token_t, dim=-1),
                         reduction='batchmean',
                         log_target=True
                     )
-        # print(token_pred - token_t)
-        
-        # print(cls_loss, pred_loss)
+            # print(token_pred - token_t)
+
+            # print(cls_loss, pred_loss)
         loss = self.clf_weight * cls_loss + self.ratio_weight * pred_loss / len(self.pruning_loc) + self.distill_weight * cls_kl_loss + self.distill_weight * token_kl_loss
-        # print('loss info: cls_loss=%.4f, ratio_loss=%.4f, cls_kl=%.4f, token_kl=%.4f' % (cls_loss, pred_loss, cls_kl_loss, token_kl_loss))
+        
+        #print('loss info: cls_loss=%.4f, ratio_loss=%.4f, cls_kl=%.4f, token_kl=%.4f' % (cls_loss, pred_loss, cls_kl_loss, token_kl_loss))
         if self.print_mode:
             self.cls_loss += cls_loss.item()
             self.ratio_loss += pred_loss.item()
@@ -238,5 +241,13 @@ class DistillDiffPruningLoss(torch.nn.Module):
                 self.ratio_loss = 0
                 self.cls_distill_loss = 0
                 self.token_distill_loss = 0
+
         return loss
+
+
+
+
+
+
+
 

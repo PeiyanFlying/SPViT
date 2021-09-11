@@ -11,8 +11,9 @@ from collections import defaultdict, deque
 import datetime
 
 import torch
+import torch.nn as nn
 import torch.distributed as dist
-
+import torch.nn.functional as F
 
 class SmoothedValue(object):
     """Track a series of values and provide access to smoothed values over a
@@ -254,3 +255,20 @@ def batch_index_select(x, idx):
         return out
     else:
         raise NotImplementedError
+
+
+class SoftTargetCrossEntropy_max(nn.Module):
+
+    def __init__(self):
+        super(SoftTargetCrossEntropy_max, self).__init__()
+
+    def forward(self, x, target):
+
+        x = x.to(torch.float32)
+        target = target.to(torch.float32)
+        max_x = torch.max(x, dim=-1, keepdim=True)[0]
+        x = x - max_x
+        loss = torch.sum(-target * F.log_softmax(x, dim=-1), dim=-1)
+
+
+        return loss.mean()

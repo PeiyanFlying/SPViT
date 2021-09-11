@@ -181,16 +181,17 @@ class Attention(nn.Module):
     def forward(self, x, policy):
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
+        #with torch.cuda.amp.autocast(enabled=False):
+        q, k, v = qkv[0], qkv[1], qkv[2] # make torchscript happy (cannot use tensor as tuple)
 
         attn = (q @ k.transpose(-2, -1)) * self.scale
 
         if policy is None:
-            attn = attn.softmax(dim=-1)
+                attn = attn.softmax(dim=-1)
         elif not self.training:
-            attn = self.softmax_with_policy(attn, policy, 0)
+                attn = self.softmax_with_policy(attn, policy, 0)
         else:
-            attn = self.softmax_with_policy(attn, policy, 1e-6)
+                attn = self.softmax_with_policy(attn, policy, 1e-6)
 
         x = (attn @ v).transpose(1, 2).reshape(B, N, C)
 
@@ -428,9 +429,9 @@ class VisionTransformerDiffPruning(nn.Module):
         num_patches = self.patch_embed.num_patches
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-        self.pre_token = nn.Parameter(torch.zeros(1, 1, embed_dim)) # 咱们多生成一个 pre_token
+        #self.pre_token = nn.Parameter(torch.zeros(1, 1, embed_dim)) # 咱们多生成一个 pre_token
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim))
-        self.pos_embed_re = nn.Parameter(torch.zeros(1, 1, embed_dim))
+        #self.pos_embed_re = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_drop = nn.Dropout(p=drop_rate)
 
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
@@ -492,11 +493,11 @@ class VisionTransformerDiffPruning(nn.Module):
         x = self.patch_embed(x)
 
         cls_tokens = self.cls_token.expand(B, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
-        pre_token = self.pre_token.expand(B, -1, -1)
-        x = torch.cat((cls_tokens, x, pre_token), dim=1)
-        pos_embed = torch.cat((self.pos_embed, self.pos_embed_re), dim=1)
+        #pre_token = self.pre_token.expand(B, -1, -1)
+        x = torch.cat((cls_tokens, x), dim=1)
+        #pos_embed = torch.cat((self.pos_embed, self.pos_embed_re), dim=1)
 
-        x = x + pos_embed 
+        x = x + self.pos_embed
 
         x = self.pos_drop(x)
 
@@ -505,39 +506,55 @@ class VisionTransformerDiffPruning(nn.Module):
         init_n = 14 * 14
         sparse = []
         score_dict = {}
-        policy = torch.ones(B, init_n + 2, 1, dtype=x.dtype, device=x.device)
-        policy[:,-1,:] = 0 # pre_token not used in the begining
+        policy = torch.ones(B, init_n + 1, 1, dtype=x.dtype, device=x.device)
+        #policy[:,-1,:] = 0 # pre_token not used in the begining
         prev_decision = torch.ones(B, init_n, 1, dtype=x.dtype, device=x.device)
         for i, blk in enumerate(self.blocks):
             if i in self.pruning_loc:
                 ### token selection (mask & weighted score)
-                if i == self.pruning_loc[0]: x[:, -1, :] = 0 # pre_roken initialization
-                spatial_x = x[:, 1:-1]
+                #if i == self.pruning_loc[0]:
+                    #x = x * policy 
+                    #x[:, -1, :] = 1e-6 # pre_roken initialization
+                    #spatial_x = x[:, 1:-1]
+                #else:
+                spatial_x = x[:, 1:]
+                if i != self.pruning_loc[0]:
+                    rep_decision = torch.ones(B, 1, 1, dtype=x.dtype, device=x.device)
+                    prev_decision = torch.cat([prev_decision, rep_decision], dim=1)
                 pred_score, softmax_score = self.score_predictor[p_count](spatial_x, prev_decision)
                 pred_score = pred_score.reshape(B, -1, 2)
                 softmax_score = softmax_score.reshape(B, -1, 2)
                 #-------------------- 确定 informative token 和 placeholder 的 mask
-                hard_keep_decision = F.gumbel_softmax(pred_score, hard=True)[:, :, 0:1] *  prev_decision
-                hard_drop_decision = (1 - hard_keep_decision) - (1 - prev_decision) #  current drop decision
+                if i == self.pruning_loc[0]:
+                    hard_keep_decision = F.gumbel_softmax(pred_score, hard=True)[:, :, 0:1] *  prev_decision
+                    hard_drop_decision = (1 - hard_keep_decision) - (1 - prev_decision) #  current drop decision
+                else:
+                    hard_keep_decision_all = F.gumbel_softmax(pred_score, hard=True)[:, :, 0:1] *  prev_decision
+                    hard_keep_decision = torch.cat([hard_keep_decision_all[:,:-1], rep_decision], dim=1)
+                    hard_drop_decision = (1 - hard_keep_decision) - (1 - prev_decision)
                 ############### end
 
                 ###get representative token  (regularization)
                 softmax_score = softmax_score[:, :, 0:1]  # softmax score of all tokens to keep
                 placeholder_score = softmax_score * hard_drop_decision  #keep score of only placeholder tokens
-                x2 = spatial_x * placeholder_score  # 被加权后的 placehoder score [96, 196, 384]
+                x2 = spatial_x * placeholder_score  # placehoder score [96, 196, 384]
                 x2_sum = torch.sum(x2, dim=1)  # sum by the N dimension, output (B,N,C)-->(B,C) [96, 384]
-                x2_sum = torch.unsqueeze(x2_sum, dim=1)  # resize to (B,1,C)  [96, 1, 384] 加权后的平均 token
+                x2_sum = torch.unsqueeze(x2_sum, dim=1)  # resize to (B,1,C)  [96, 1, 384]
                 #--------------------
                 placeholder_score_sum = torch.sum(placeholder_score, dim=1)  # sum of token score, [96, 196, 1]-->[96, 1]
                 placeholder_score_sum = torch.unsqueeze(placeholder_score_sum, dim=1)  # resize to [96, 1, 1]
                 #--------------------
-                represent_token = x2_sum / placeholder_score_sum  # regularization --> [96, 1, 384] 被正则化后的 representitave token
+                represent_token = x2_sum / placeholder_score_sum  # regularization --> [96, 1, 384] representitave token
 
-                represent_token = x[:, -1:, :] + represent_token
-
-                x = x[:,:-1]
-                x = torch.cat((x,represent_token), dim=1)
+                if i == self.pruning_loc[0]:
+                    x = torch.cat((x,represent_token), dim=1)
+                else:
+                    represent_token = x[:, -1:, :] + represent_token
+                    x = x[:,:-1]
+                    x = torch.cat((x,represent_token), dim=1)
                 #x[:, -1, :] = x[:, -1, :] + represent_token # 和唐老师聊一下，纯粹叠加
+                if i  != self.pruning_loc[0]:
+                    hard_keep_decision = hard_keep_decision[:,:-1]
 
                 if self.training:
                     out_pred_prob.append(hard_keep_decision.reshape(B, init_n))

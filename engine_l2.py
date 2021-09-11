@@ -15,7 +15,7 @@ from losses import DistillationLoss
 import utils
 
 import random
-
+import gc
 
 def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
@@ -27,19 +27,21 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 10
-    # i = 0
+    #i = 0
+    #random.seed(epoch)
 
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
+
         samples = samples.to(device, non_blocking=True)
         targets = targets.to(device, non_blocking=True)
 
-
         if mixup_fn is not None:
             samples, targets = mixup_fn(samples, targets)
-
         with torch.cuda.amp.autocast():
             outputs = model(samples)
+
             loss = criterion(samples, outputs, targets)
+ 
 
         loss_value = loss.item()
 
@@ -58,7 +60,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
         if model_ema is not None:
             model_ema.update(model)
 
-        # i+=1
+        #i+=1
         #
         # if i > 1: break
 
