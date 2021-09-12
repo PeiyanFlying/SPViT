@@ -9,7 +9,7 @@ https://drive.google.com/drive/folders/1diICKopeYL7H84Wsr0Xxh30e9xh6RX2d?usp=sha
 ### 生成 multihead-predictor 类
 ### VisionTransformerDiffPruning 的 forward()
 
-## vit.py 文件改动，生成 vit_l2_3keep.py [对于 three keep token]
+## vit.py 文件改动，生成 vit_l2_3keep.py [对于 three keep tokens]
 
 
 ### 生成 multihead-predictor 类
