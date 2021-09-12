@@ -5,7 +5,7 @@ https://docs.google.com/spreadsheets/d/1k25sS_-mmQyIvpIrn32GUw3eRuYcCy0cN0OSOq0Q
 https://drive.google.com/drive/folders/1diICKopeYL7H84Wsr0Xxh30e9xh6RX2d?usp=sharing
 
 ## 可选择是否使用全精度训练。关闭 amp 功能。在 engine_l2.py 的 train_one_epoch() 和 evaluate()
-![](1.png)
+![](fig/1.png)
 
 ## vit.py 文件改动，生成 vit_l2.py [对于 one keep token]
 
