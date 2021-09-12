@@ -554,13 +554,13 @@ class VisionTransformerDiffPruning(nn.Module):
                 if self.training:
                     out_pred_prob.append(hard_keep_decision.reshape(B, init_n))
                     cls_policy = torch.ones(B, 1, 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
-                    rep_policy = torch.ones(B, 1, (p_count + 1), dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
+                    rep_policy = torch.ones(B, (p_count + 1), 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
                     policy = torch.cat([cls_policy, hard_keep_decision, rep_policy], dim=1)
                     x = blk(x, policy=policy)   #when i=None, means no output rep. token. Such as first 3 layers.
                     prev_decision = hard_keep_decision
                 else:
                     cls_policy = torch.ones(B, 1,1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
-                    rep_policy = torch.ones(B, 1, (p_count + 1), dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
+                    rep_policy = torch.ones(B, (p_count + 1), 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
                     policy = torch.cat([cls_policy, hard_keep_decision, rep_policy], dim=1)
                     x = blk(x, policy=policy)   #when i=None, means no output rep. token. Such as first 3 layers.
                     prev_decision = hard_keep_decision
@@ -576,7 +576,7 @@ class VisionTransformerDiffPruning(nn.Module):
             ############### end
 
         x = self.norm(x)
-        features = x[:, 1:-1]
+        features = x[:, 1:-3]
         x = x[:, 0]
         x = self.pre_logits(x)
         x = self.head(x)
