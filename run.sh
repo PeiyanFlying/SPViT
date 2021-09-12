@@ -20,26 +20,18 @@ To train DynamicViT models on ImageNet, run:
 
 DeiT-small
 ```
-python3 -m torch.distributed.launch --nproc_per_node=8 --use_env main_dynamic_vit.py  --output_dir logs/dynamic-vit_deit-small --arch deit_small --input-size 224 --batch-size 20 --data-path /data/imagenet/--epochs 30 --dist-eval --distill --base_rate 0.7
+python3 -m torch.distributed.launch --nproc_per_node=8 --use_env main_l2_vit.py  --output_dir logs/dynamic-vit_deit-small --arch deit_small --input-size 224 --batch-size 20 --data-path /data/imagenet/--epochs 30 --dist-eval --distill --base_rate 0.7
 ```
 
 LV-ViT-S
 ```
-python3 -m torch.distributed.launch --nproc_per_node=8 --use_env main_dynamic_vit.py  --output_dir logs/dynamic-vit_lvvit-s --arch lvvit_s --input-size 224 --batch-size 64 --data-path /data/ImageNet/ --epochs 30 --dist-eval --distill --base_rate 0.7
+python3 -m torch.distributed.launch --nproc_per_node=8 --use_env main_l2_vit.py  --output_dir logs/dynamic-vit_lvvit-s --arch lvvit_s --input-size 224 --batch-size 64 --data-path /data/ImageNet/ --epochs 30 --dist-eval --distill --base_rate 0.7
 ```
 
 LV-ViT-M
 ```
-python3 -m torch.distributed.launch --nproc_per_node=8 --use_env main_dynamic_vit.py  --output_dir logs/dynamic-vit_lvvit-m --arch lvvit_m --input-size 224 --batch-size 48 --data-path /data/ImageNet/ --epochs 30 --dist-eval --distill --base_rate 0.7
+python3 -m torch.distributed.launch --nproc_per_node=8 --use_env main_l2_vit.py  --output_dir logs/dynamic-vit_lvvit-m --arch lvvit_m --input-size 224 --batch-size 48 --data-path /data/ImageNet/ --epochs 30 --dist-eval --distill --base_rate 0.7
 ```
 
 You can train models with different keeping ratio by adjusting ```base_rate```. DynamicViT can also achieve comparable performance with only 15 epochs training (around 0.1% lower accuracy compared to 30 epochs).
-
-
-###### 以下是正在开发的代码
-# debug for soft mask merge
-
-python3 -m torch.distributed.launch --nproc_per_node=8 --use_env main_soft_vit.py --output_dir logs/dynamic-vit_deit-small --arch deit_small --input-size 224 --batch-size 96 --data-path /data/ImageNet_new/ --epochs 30 --dist-eval --distill --base_rate 0.7 2>&1 | tee -i test.log
-
-CUDA_VISIBLE_DEVICES=0,1,2,3 python3 main_soft_vit.py --output_dir logs/dynamic-vit_deit-small --arch deit_small --input-size 224 --batch-size 384 --data-path /data/ImageNet_new/ --epochs 30 --dist-eval --distill --base_rate 0.7 2>&1 | tee -i fine_soft.log
 
