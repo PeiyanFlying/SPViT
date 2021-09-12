@@ -918,7 +918,7 @@ def test_irregular_sparsity(name,matrix):
     non_zeros = np.sum(matrix.cpu().detach().numpy() != 0)
 
     # print(name, non_zeros)
-    print(" {}, all weights: {}, irregular zeros: {}, irregular sparsity is: {:.4f}".format( name, zeros+non_zeros, zeros, zeros / (zeros + non_zeros)))
+    #print(" {}, all weights: {}, irregular zeros: {}, irregular sparsity is: {:.4f}".format( name, zeros+non_zeros, zeros, zeros / (zeros + non_zeros)))
     # print(non_zeros+zeros)
     # total_nonzeros += 128000
 
