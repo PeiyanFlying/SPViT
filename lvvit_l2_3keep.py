@@ -731,7 +731,7 @@ class LVViTDiffPruning(nn.Module):
             if i in self.pruning_loc:
                 spatial_x = x[:, 1:]
                 if i != self.pruning_loc[0]:
-                    rep_decision = torch.ones(B, 1, 1, dtype=x.dtype, device=x.device)
+                    rep_decision = torch.ones(B, p_count, 1, dtype=x.dtype, device=x.device)
                     prev_decision = torch.cat([prev_decision, rep_decision], dim=1)
                 pred_score, softmax_score = self.score_predictor[p_count](spatial_x, prev_decision)
                 pred_score = pred_score.reshape(B, -1, 2)
@@ -742,7 +742,7 @@ class LVViTDiffPruning(nn.Module):
                     hard_drop_decision = (1 - hard_keep_decision) - (1 - prev_decision) #  current drop decision
                 else:
                     hard_keep_decision_all = F.gumbel_softmax(pred_score, hard=True)[:, :, 0:1] *  prev_decision
-                    hard_keep_decision = torch.cat([hard_keep_decision_all[:,:-1], rep_decision], dim=1)
+                    hard_keep_decision = torch.cat([hard_keep_decision_all[:,:-p_count], rep_decision], dim=1)
                     hard_drop_decision = (1 - hard_keep_decision) - (1 - prev_decision)
                 ############### end
 
@@ -758,26 +758,21 @@ class LVViTDiffPruning(nn.Module):
                 #--------------------
                 represent_token = x2_sum / placeholder_score_sum  # regularization --> [96, 1, 384] representitave token
 
-                if i == self.pruning_loc[0]:
-                    x = torch.cat((x,represent_token), dim=1)
-                else:
-                    represent_token = x[:, -1:, :] + represent_token
-                    x = x[:,:-1]
-                    x = torch.cat((x,represent_token), dim=1)
-                #x[:, -1, :] = x[:, -1, :] + represent_token # 和唐老师聊一下，纯粹叠加
-                if i  != self.pruning_loc[0]:
-                    hard_keep_decision = hard_keep_decision[:,:-1]
+
+                x = torch.cat((x,represent_token), dim=1)
+                if i != self.pruning_loc[0]:
+                    hard_keep_decision = hard_keep_decision[:,:-p_count]
 
                 if self.training:
                     out_pred_prob.append(hard_keep_decision.reshape(B, init_n))
                     cls_policy = torch.ones(B, 1, 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
-                    rep_policy = torch.ones(B, 1, 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
+                    rep_policy = torch.ones(B, (p_count + 1), 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
                     policy = torch.cat([cls_policy, hard_keep_decision, rep_policy], dim=1)
                     x = blk(x, policy=policy)
                     prev_decision = hard_keep_decision
                 else:
                     cls_policy = torch.ones(B, 1, 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
-                    rep_policy = torch.ones(B, 1, 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
+                    rep_policy = torch.ones(B, (p_count + 1), 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
                     policy = torch.cat([cls_policy, hard_keep_decision, rep_policy], dim=1)
                     zeros, unzeros = test_irregular_sparsity(p_count, policy)
                     sparse.append([zeros, unzeros])
@@ -791,7 +786,7 @@ class LVViTDiffPruning(nn.Module):
         
         x = self.norm(x)
         x_cls = self.head(x[:,0])
-        x_aux = self.aux_head(x[:,1:-1])
+        x_aux = self.aux_head(x[:,1:-3])
         final_pred =  x_cls + 0.5 * x_aux.max(1)[0]
 
         if self.training:
