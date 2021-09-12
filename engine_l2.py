@@ -28,7 +28,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 10
     #i = 0
-    random.seed(epoch)
+    #random.seed(epoch)
 
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
 
