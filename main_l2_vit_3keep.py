@@ -65,7 +65,7 @@ def get_args_parser():
     # Learning rate schedule parameters
     parser.add_argument('--sched', default='cosine', type=str, metavar='SCHEDULER',
                         help='LR scheduler (default: "cosine"')
-    parser.add_argument('--lr', type=float, default=5e-4, metavar='LR',
+    parser.add_argument('--lr', type=float, default=2e-4, metavar='LR',
                         help='learning rate (default: 5e-4)')
     parser.add_argument('--lr-noise', type=float, nargs='+', default=None, metavar='pct, pct',
                         help='learning rate noise on/off epoch percentages')
@@ -198,6 +198,8 @@ def get_param_groups(model, weight_decay):
 
 
 def adjust_learning_rate(param_groups, init_lr, min_lr, step, max_step, warming_up_step=2, warmup_predictor=False, base_multi=0.1):
+    if step >= 30:
+        init_lr = 5e-4 
     cos_lr = (math.cos(step / max_step * math.pi) + 1) * 0.5
     cos_lr = min_lr + cos_lr * (init_lr - min_lr)
     if warmup_predictor and step < 1:
