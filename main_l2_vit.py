@@ -26,6 +26,7 @@ from functools import partial
 import torch.nn as nn
 from vit_l2 import VisionTransformerDiffPruning, VisionTransformerTeacher, _cfg, checkpoint_filter_fn
 from lvvit_l2 import LVViTDiffPruning, LVViT_Teacher
+from pit import PoolingTransformer, PoolingTransformerTeacher
 import math
 import shutil
 
@@ -370,6 +371,45 @@ def main(args):
             model_t.load_state_dict(checkpoint, strict=True)
             model_t.to(device)
             print('sucessfully loaded from pre-trained weights for the teach model')
+
+    elif args.arch == 'pit_s':
+        PRUNING_LOC = [1,3,2]
+        print(f"Creating model: {args.arch}")
+        print('token_ratio =', KEEP_RATE, 'at layer', PRUNING_LOC)
+        model = PoolingTransformer(
+            image_size=224,
+            patch_size=16,
+            stride=8,
+            base_dims=[48, 48, 48],
+            depth=[2, 6, 4],
+            heads=[3, 6, 12],
+            mlp_ratio=4,
+            pruning_loc=PRUNING_LOC, token_ratio=KEEP_RATE, distill=args.distill
+            )
+        model_path = './pit_s_809.pth'
+        checkpoint = torch.load(model_path, map_location="cpu")
+        #ckpt = checkpoint_filter_fn(checkpoint, model)
+        model.default_cfg = _cfg()
+        missing_keys, unexpected_keys = model.load_state_dict(checkpoint, strict=False)
+        print('# missing keys=', missing_keys)
+        print('# unexpected keys=', unexpected_keys)
+        print('sucessfully loaded from pre-trained weights:', model_path)
+
+        if args.distill:
+            print('## Distillation Pruning Mode')
+            model_t = PoolingTransformerTeacher(
+                image_size=224,
+                patch_size=16,
+                stride=8,
+                base_dims=[48, 48, 48],
+                depth=[2, 6, 4],
+                heads=[3, 6, 12],
+                mlp_ratio=4
+            )
+            model_t.load_state_dict(checkpoint, strict=False)
+            model_t.to(device)
+            print('sucessfully loaded from pre-trained weights for the teach model')
+
     else:
         raise NotImplementedError
 

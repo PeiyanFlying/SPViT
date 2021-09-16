@@ -8,9 +8,9 @@ from torch import nn
 import math
 import json
 import torch.nn.functional as F
-
+import numpy as np
 from functools import partial
-from timm.models.layers import trunc_normal_
+from timm.models.layers import DropPath, trunc_normal_
 from timm.models.registry import register_model
 
 file = 'score.json'
@@ -102,10 +102,11 @@ class Block(nn.Module):
 
 class Transformer(nn.Module):
     def __init__(self, base_dim, depth, heads, mlp_ratio,
-                 drop_rate=.0, attn_drop_rate=.0, drop_path_prob=None, pruning_loc=None, token_ratio=None):
+                 drop_rate=.0, attn_drop_rate=.0, drop_path_prob=None, pruning_loc=None, token_ratio=None, distill=False):
         super(Transformer, self).__init__()
         self.layers = nn.ModuleList([])
         embed_dim = base_dim * heads
+        self.distill = distill
 
         if drop_path_prob is None:
             drop_path_prob = [0.0 for _ in range(depth)]
@@ -123,11 +124,16 @@ class Transformer(nn.Module):
                 norm_layer=partial(nn.LayerNorm, eps=1e-6)
             )
             for i in range(depth)])
-
-        predictor_list = [MultiheadPredictorLG(heads,embed_dim) for _ in range(len(pruning_loc))]
+        print('pruning_loc', pruning_loc)
+        pruning_loc_stage = []
+        pruning_loc_stage.append(pruning_loc)
+        print('pruning_loc_stage', pruning_loc_stage)
+        predictor_list = [MultiheadPredictorLG(heads,embed_dim) for _ in range(len(pruning_loc_stage))]
+        #predictor_list = [MultiheadPredictorLG(heads,embed_dim) for _ in range(1)]
 
         self.score_predictor = nn.ModuleList(predictor_list)
         self.token_ratio = token_ratio
+        self.pruning_loc_stage = pruning_loc_stage
 
     def forward(self, x, cls_tokens, policy):
         h, w = x.shape[2:4]
@@ -142,8 +148,9 @@ class Transformer(nn.Module):
         init_n = x.shape[1]
         prev_decision = policy[:, token_length:]
         x = torch.cat((cls_tokens, x), dim=1)
+
         for i, blk in enumerate(self.blocks):
-            if i in self.pruning_loc:
+            if i in self.pruning_loc_stage:
                 spatial_x = x[:, token_length:]
                 pred_score = self.score_predictor[p_count](spatial_x, prev_decision).reshape(B, -1, 2)
                 hard_keep_decision = F.gumbel_softmax(pred_score, hard=True)[:, :, 0:1] * prev_decision
@@ -182,6 +189,45 @@ class Transformer(nn.Module):
             return x, cls_tokens
 
 
+class Transformer_Teacher(nn.Module):
+    def __init__(self, base_dim, depth, heads, mlp_ratio,
+                 drop_rate=.0, attn_drop_rate=.0, drop_path_prob=None):
+        super(Transformer_Teacher, self).__init__()
+        self.layers = nn.ModuleList([])
+        embed_dim = base_dim * heads
+
+        if drop_path_prob is None:
+            drop_path_prob = [0.0 for _ in range(depth)]
+
+        self.blocks = nn.ModuleList([
+            Block(
+                dim=embed_dim,
+                num_heads=heads,
+                mlp_ratio=mlp_ratio,
+                qkv_bias=True,
+                drop=drop_rate,
+                attn_drop=attn_drop_rate,
+                drop_path=drop_path_prob[i],
+                norm_layer=partial(nn.LayerNorm, eps=1e-6)
+            )
+            for i in range(depth)])
+
+    def forward(self, x, cls_tokens):
+        h, w = x.shape[2:4]
+        x = rearrange(x, 'b c h w -> b (h w) c')
+
+        token_length = cls_tokens.shape[1]
+        x = torch.cat((cls_tokens, x), dim=1)
+        for blk in self.blocks:
+            x = blk(x)
+
+        cls_tokens = x[:, :token_length]
+        x = x[:, token_length:]
+        x = rearrange(x, 'b (h w) c -> b c h w', h=h, w=w)
+
+        return x, cls_tokens
+
+
 class MultiheadPredictorLG(nn.Module):
     """ Image to Patch Embedding
     """
@@ -217,7 +263,7 @@ class MultiheadPredictorLG(nn.Module):
 
         multihead_score = 0
         for i in range(self.num_heads):
-            x_single = x[:,:,self.embed_dim//self.num_heads*i:self.embed_dim//self.num_heads*(i+1)]   #([96, 196, 64])
+            x_single = x[:,:,x.shape[2]//self.num_heads*i:x.shape[2]//self.num_heads*(i+1)]   #([96, 196, 64])
             x_single = self.in_conv[i](x_single)
             B, N, C = x_single.size()       #([96, 196, 64])
             local_x = x_single[:,:, :C//2]  #([96, 196, 32])
@@ -300,6 +346,7 @@ class PoolingTransformer(nn.Module):
         self.token_ratio = token_ratio
 
         for stage in range(len(depth)):
+            print('stage',stage)
             drop_path_prob = [drop_path_rate * i / total_block
                               for i in range(block_idx, block_idx + depth[stage])]
             block_idx += depth[stage]
@@ -307,7 +354,7 @@ class PoolingTransformer(nn.Module):
             self.transformers.append(
                 Transformer(base_dims[stage], depth[stage], heads[stage], # 不同的 stage，三种不同模式的 transformer
                             mlp_ratio,
-                            drop_rate, attn_drop_rate, drop_path_prob, pruning_loc[stage], token_ratio[stage])
+                            drop_rate, attn_drop_rate, drop_path_prob, pruning_loc[stage], token_ratio[stage], distill)
             )
             if stage < len(heads) - 1:
                 self.pools.append(
@@ -359,7 +406,7 @@ class PoolingTransformer(nn.Module):
         token_length = cls_tokens.shape[1]
 
         out_pred_prob = []
-        for stage in range(len(self.pools)):
+        for stage in range(len(self.pools)): #only two stage
             h, w = x.shape[2:4]
             init_n = h * w
             policy = torch.ones(B, init_n + token_length, 1, dtype=x.dtype, device=x.device)
@@ -369,6 +416,7 @@ class PoolingTransformer(nn.Module):
                 else:
                     x, cls_tokens, sub_pred_prob= self.transformers[stage](x, cls_tokens, policy = policy)
                 out_pred_prob = out_pred_prob + sub_pred_prob
+
             else:
                 x, cls_tokens = self.transformers[stage](x, cls_tokens, policy = policy)
             x, cls_tokens = self.pools[stage](x, cls_tokens)
@@ -382,6 +430,7 @@ class PoolingTransformer(nn.Module):
             else:
                 x, cls_tokens, sub_pred_prob= self.transformers[-1](x, cls_tokens, policy = policy)
             out_pred_prob = out_pred_prob + sub_pred_prob
+
         else:
             x, cls_tokens = self.transformers[-1](x, cls_tokens, policy = policy)
 
@@ -397,6 +446,7 @@ class PoolingTransformer(nn.Module):
         cls_token = self.head(cls_token[:, 0])
         if self.training:
             if self.distill:
+                features = rearrange(features, 'b c h w -> b (h w) c')
                 return cls_token, features, prev_decision.detach(), out_pred_prob
             else:
                 return cls_token, out_pred_prob
@@ -446,7 +496,7 @@ class PoolingTransformerTeacher(nn.Module):
             block_idx += depth[stage]
 
             self.transformers.append(
-                Transformer(base_dims[stage], depth[stage], heads[stage], # 不同的 stage，三种不同模式的 transformer
+                Transformer_Teacher(base_dims[stage], depth[stage], heads[stage], # 不同的 stage，三种不同模式的 transformer
                             mlp_ratio,
                             drop_rate, attn_drop_rate, drop_path_prob)
             )
@@ -594,7 +644,6 @@ def test_irregular_sparsity(name,matrix):
 
     # print(name, non_zeros)
     print(" {}, all weights: {}, irregular zeros: {}, irregular sparsity is: {:.4f}".format( name, zeros+non_zeros, zeros, zeros / (zeros + non_zeros)))
-    # print(non_zeros+zeros)
-    # total_nonzeros += 128000
+
 
     return zeros,non_zeros
