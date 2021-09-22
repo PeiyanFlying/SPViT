@@ -591,7 +591,8 @@ class VisionTransformerDiffPruning(nn.Module):
             with open(file, 'a') as f: # ins
                 json.dump(score_dict, f)
                 f.write('\n')
-            return x, sparse
+            sparse = torch.FloatTensor(sparse).cuda()
+            return x, sparse.detach()
 
 class VisionTransformerTeacher(nn.Module):
     """ Vision Transformer
