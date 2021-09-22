@@ -12,8 +12,7 @@ pip3 install timm==0.4.5
 
 
 ## 下载prertained model
-
-wget https://dl.fbaipublicfiles.com/deit/deit_small_patch16_224-cd65a155.pth
+见 download_pretrain.sh
 
 
 
