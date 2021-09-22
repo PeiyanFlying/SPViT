@@ -551,6 +551,14 @@ class MultiheadPredictorLG(nn.Module):
         #print('head_num',num_heads)
         self.num_heads=num_heads
         self.embed_dim = embed_dim
+
+        self.senet = nn.Sequential(
+            nn.Linear(num_heads, num_heads // 2),
+            nn.GELU(),
+            nn.Linear(num_heads // 2, num_heads),
+            nn.Sigmoid()
+        )
+
         onehead_in_conv = nn.Sequential(
             nn.LayerNorm(embed_dim // num_heads),
             nn.Linear(embed_dim // num_heads, embed_dim // num_heads),
@@ -565,7 +573,6 @@ class MultiheadPredictorLG(nn.Module):
             nn.Linear(embed_dim // num_heads // 4, 2),
             #nn.LogSoftmax(dim=-1)
         )
-
 
         in_conv_list = [onehead_in_conv for _ in range(num_heads)]
         out_conv_list = [onehead_out_conv for _ in range(num_heads)]
@@ -589,20 +596,22 @@ class MultiheadPredictorLG(nn.Module):
             # for placeholder
             m = nn.Softmax(dim=-1)
             score_softmax = m(x_single)
+            score_softmax = score_softmax * head_weights[:, :, i:i + 1]  # [64, 196, 2]
             multihead_softmax_score += score_softmax
 
             # for gumble
             n = nn.LogSoftmax(dim=-1)
             score_single = n(x_single)
+            score_single = score_single * head_weights[:, :, i:i + 1]  # [64, 196, 2]
             multihead_score += score_single
 
-        # for gumble
-        multihead_score = multihead_score / self.num_heads  # ([96, 196, 2])
-
         # for placeholder
-        multihead_softmax_score = multihead_softmax_score / self.num_heads  # get softmax keep/drop probability
+        multihead_softmax_score = multihead_softmax_score / head_weights_sum
 
-        return multihead_score, multihead_softmax_score  
+        # for gumble
+        multihead_score = multihead_score / head_weights_sum  # ([96, 196, 2])
+
+        return multihead_score, multihead_softmax_score  #, represent_token, placeholder_weights, placeholder_score3
 
 
 class LVViTDiffPruning(nn.Module):
@@ -731,7 +740,7 @@ class LVViTDiffPruning(nn.Module):
             if i in self.pruning_loc:
                 spatial_x = x[:, 1:]
                 if i != self.pruning_loc[0]:
-                    rep_decision = torch.ones(B, 1, 1, dtype=x.dtype, device=x.device)
+                    rep_decision = torch.ones(B, p_count, 1, dtype=x.dtype, device=x.device)
                     prev_decision = torch.cat([prev_decision, rep_decision], dim=1)
                 pred_score, softmax_score = self.score_predictor[p_count](spatial_x, prev_decision)
                 pred_score = pred_score.reshape(B, -1, 2)
@@ -742,7 +751,7 @@ class LVViTDiffPruning(nn.Module):
                     hard_drop_decision = (1 - hard_keep_decision) - (1 - prev_decision) #  current drop decision
                 else:
                     hard_keep_decision_all = F.gumbel_softmax(pred_score, hard=True)[:, :, 0:1] *  prev_decision
-                    hard_keep_decision = torch.cat([hard_keep_decision_all[:,:-1], rep_decision], dim=1)
+                    hard_keep_decision = torch.cat([hard_keep_decision_all[:,:-p_count], rep_decision], dim=1)
                     hard_drop_decision = (1 - hard_keep_decision) - (1 - prev_decision)
                 ############### end
 
@@ -762,24 +771,21 @@ class LVViTDiffPruning(nn.Module):
                     print('has nan')
                     represent_token = torch.nan_to_num(represent_token, nan = 1e-6)
              
-                if i == self.pruning_loc[0]:
-                    x = torch.cat((x,represent_token), dim=1)
-                else:
-                    represent_token = x[:, -1:, :] + represent_token
-                    x = x[:,:-1]
-                    x = torch.cat((x,represent_token), dim=1)
-                    hard_keep_decision = hard_keep_decision[:,:-1]
+
+                x = torch.cat((x,represent_token), dim=1)
+                if i != self.pruning_loc[0]:
+                    hard_keep_decision = hard_keep_decision[:,:-p_count]
 
                 if self.training:
                     out_pred_prob.append(hard_keep_decision.reshape(B, init_n))
                     cls_policy = torch.ones(B, 1, 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
-                    rep_policy = torch.ones(B, 1, 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
+                    rep_policy = torch.ones(B, (p_count + 1), 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
                     policy = torch.cat([cls_policy, hard_keep_decision, rep_policy], dim=1)
                     x = blk(x, policy=policy)
                     prev_decision = hard_keep_decision
                 else:
                     cls_policy = torch.ones(B, 1, 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
-                    rep_policy = torch.ones(B, 1, 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
+                    rep_policy = torch.ones(B, (p_count + 1), 1, dtype=hard_keep_decision.dtype, device=hard_keep_decision.device)
                     policy = torch.cat([cls_policy, hard_keep_decision, rep_policy], dim=1)
                     zeros, unzeros = test_irregular_sparsity(p_count, policy)
                     sparse.append([zeros, unzeros])
@@ -793,7 +799,7 @@ class LVViTDiffPruning(nn.Module):
         
         x = self.norm(x)
         x_cls = self.head(x[:,0])
-        x_aux = self.aux_head(x[:,1:-1])
+        x_aux = self.aux_head(x[:,1:-3])
         final_pred =  x_cls + 0.5 * x_aux.max(1)[0]
 
         if self.training:
@@ -805,6 +811,7 @@ class LVViTDiffPruning(nn.Module):
             with open(file, 'a') as f: # ins
                 json.dump(score_dict, f)
                 f.write('\n')
+            sparse = torch.FloatTensor(sparse).cuda()
             return final_pred, sparse
 
 class LVViT_Teacher(nn.Module):
