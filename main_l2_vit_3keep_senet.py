@@ -21,7 +21,6 @@ from engine_l2 import train_one_epoch, evaluate
 from losses_l2 import DistillationLoss, DiffPruningLoss, DistillDiffPruningLoss
 from samplers import RASampler
 import utils
-from utils import SoftTargetCrossEntropy_max
 from functools import partial
 import torch.nn as nn
 from vit_l2_3keep_senet import VisionTransformerDiffPruning, VisionTransformerTeacher, _cfg, checkpoint_filter_fn
@@ -175,7 +174,6 @@ def get_args_parser():
     return parser
 
 
-
 def get_param_groups(model, weight_decay):
     decay = []
     no_decay = []
@@ -290,9 +288,9 @@ def main(args):
 
 
     base_rate = args.base_rate
-    #KEEP_RATE = [base_rate, base_rate ** 2, base_rate ** 3]
+    KEEP_RATE = [base_rate, base_rate ** 2, base_rate ** 3]
     # KEEP_RATE = [1.0, 1.0, 1.0]
-    KEEP_RATE = [0.617,0.369,0.137]
+    # KEEP_RATE = [0.617,0.369,0.137]
 
     if args.arch == 'deit_small':
         PRUNING_LOC = [3,6,9] 
@@ -315,6 +313,31 @@ def main(args):
             print('## Distillation Pruning Mode')
             model_t = VisionTransformerTeacher(
                 patch_size=16, embed_dim=384, depth=12, num_heads=6, mlp_ratio=4, qkv_bias=True
+            )
+            model_t.load_state_dict(ckpt, strict=True)
+            model_t.to(device)
+            print('sucessfully loaded from pre-trained weights for the teach model')
+    elif args.arch == 'deit_tiny':
+        PRUNING_LOC = [3,6,9]
+        print(f"Creating model: {args.arch}")
+        print('token_ratio =', KEEP_RATE, 'at layer', PRUNING_LOC)
+        model = VisionTransformerDiffPruning(
+            patch_size=16, embed_dim=192, depth=12, num_heads=3, mlp_ratio=4, qkv_bias=True,
+            pruning_loc=PRUNING_LOC, token_ratio=KEEP_RATE, distill=args.distill
+            )
+        model_path = './deit_tiny_patch16_224-a1311bcf.pth'
+        checkpoint = torch.load(model_path, map_location="cpu")
+        ckpt = checkpoint_filter_fn(checkpoint, model)
+        model.default_cfg = _cfg()
+        missing_keys, unexpected_keys = model.load_state_dict(ckpt, strict=False)
+        print('# missing keys=', missing_keys)
+        print('# unexpected keys=', unexpected_keys)
+        print('sucessfully loaded from pre-trained weights:', model_path)
+
+        if args.distill:
+            print('## Distillation Pruning Mode')
+            model_t = VisionTransformerTeacher(
+                patch_size=16, embed_dim=192, depth=12, num_heads=3, mlp_ratio=4, qkv_bias=True
             )
             model_t.load_state_dict(ckpt, strict=True)
             model_t.to(device)
