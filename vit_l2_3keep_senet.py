@@ -448,9 +448,7 @@ class VisionTransformerDiffPruning(nn.Module):
         num_patches = self.patch_embed.num_patches
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-        #self.pre_token = nn.Parameter(torch.zeros(1, 1, embed_dim)) # 咱们多生成一个 pre_token
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim))
-        #self.pos_embed_re = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_drop = nn.Dropout(p=drop_rate)
 
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
@@ -512,9 +510,7 @@ class VisionTransformerDiffPruning(nn.Module):
         x = self.patch_embed(x)
 
         cls_tokens = self.cls_token.expand(B, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
-        #pre_token = self.pre_token.expand(B, -1, -1)
         x = torch.cat((cls_tokens, x), dim=1)
-        #pos_embed = torch.cat((self.pos_embed, self.pos_embed_re), dim=1)
 
         x = x + self.pos_embed
 
@@ -526,21 +522,15 @@ class VisionTransformerDiffPruning(nn.Module):
         sparse = []
         score_dict = {}
         policy = torch.ones(B, init_n + 1, 1, dtype=x.dtype, device=x.device)
-        #policy[:,-1,:] = 0 # pre_token not used in the begining
+
         prev_decision = torch.ones(B, init_n, 1, dtype=x.dtype, device=x.device)
-        #print('self.pruning_loc',self.pruning_loc)
-        #exit()
+
         for i, blk in enumerate(self.blocks):
             if math.isnan(x.mean()):
                 print('hello****')
                 print('blk num',i)
             if i in self.pruning_loc:
-                ### token selection (mask & weighted score)
-                #if i == self.pruning_loc[0]:
-                    #x = x * policy 
-                    #x[:, -1, :] = 1e-6 # pre_roken initialization
-                    #spatial_x = x[:, 1:-1]
-                #else:
+
                 spatial_x = x[:, 1:]
                 if i != self.pruning_loc[0]:
                     rep_decision = torch.ones(B, p_count, 1, dtype=x.dtype, device=x.device)
@@ -568,17 +558,9 @@ class VisionTransformerDiffPruning(nn.Module):
                 placeholder_score_sum = torch.sum(placeholder_score, dim=1)  # sum of token score, [96, 196, 1]-->[96, 1]
                 placeholder_score_sum = torch.unsqueeze(placeholder_score_sum, dim=1)  # resize to [96, 1, 1]
                 #--------------------
-                #N= x.shape[1]
-                #if torch.is_nonzero(placeholder_score_sum):
-                represent_token = x2_sum/ (placeholder_score_sum)
-                #else:
-                #    represent_token = x2_sum/ (placeholder_score_sum + 1e-6)  # regularization --> [96, 1, 384] representitave token
-                #if math.isnan(placeholder_score_sum.mean()):
-                #  print('placeholder_score_sum is nan')
-                #if math.isnan(x2_sum.mean()):
-                #  print('x2_sum is nan',x2_sum)
-                #if math.isnan(represent_token.mean()):
-                #    print('represent_token is nan',represent_token)
+
+                represent_token = x2_sum/ placeholder_score_sum
+
                 rep_mean = represent_token.mean()
                 if torch.isnan(rep_mean):
                     print('has nan')
@@ -619,11 +601,6 @@ class VisionTransformerDiffPruning(nn.Module):
         x = x[:, 0]
         x = self.pre_logits(x)
         x = self.head(x)
-        
-        
-        #if math.isnan(x.mean()):
-            #print('hello****')
-
 
         if self.training:
             if self.distill:
