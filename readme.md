@@ -1,3 +1,23 @@
+## 环境配置:
+
+conda create -n DynamicVit python=3.6
+conda activate DynamicVit
+conda deactivate
+conda install pytorch==1.8.0 torchvision==0.9.0 torchaudio==0.8.0 -c pytorch
+pip3 install timm==0.4.5
+
+
+## 下载prertained model
+
+wget https://dl.fbaipublicfiles.com/deit/deit_small_patch16_224-cd65a155.pth
+
+
+
+## 命令
+跑3keep senet
+python3 -u -m torch.distributed.launch --nproc_per_node=8 --use_env main_l2_vit_3keep_senet --output_dir logs/3keep_senet --arch deit_small --input-size 224 --batch-size 96 --data-path /data/ImageNet_new/ --epochs 30 --dist-eval --distill --base_rate 0.7 2>&1 | tee -i 3keep_senet.log
+
+
 ## 调参 link
 https://docs.google.com/spreadsheets/d/1k25sS_-mmQyIvpIrn32GUw3eRuYcCy0cN0OSOq0QGFI/edit?usp=sharing
 
