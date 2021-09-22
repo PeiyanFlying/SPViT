@@ -290,7 +290,7 @@ def main(args):
     base_rate = args.base_rate
     # KEEP_RATE = [base_rate, base_rate ** 2, base_rate ** 3]
     KEEP_RATE = [0.617,0.369,0.137]
-    
+
     if args.arch == 'deit_base':
         PRUNING_LOC = [3,6,9] 
         print(f"Creating model: {args.arch}")
@@ -317,7 +317,7 @@ def main(args):
             model_t.to(device)
             print('sucessfully loaded from pre-trained weights for the teach model')
 
-    if args.arch == 'deit_small':
+    elif args.arch == 'deit_small':
         PRUNING_LOC = [3,6,9] 
         print(f"Creating model: {args.arch}")
         print('token_ratio =', KEEP_RATE, 'at layer', PRUNING_LOC)
