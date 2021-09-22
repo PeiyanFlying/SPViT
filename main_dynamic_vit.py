@@ -27,7 +27,6 @@ from vit import VisionTransformerDiffPruning, VisionTransformerTeacher, _cfg, ch
 from lvvit import LVViTDiffPruning, LVViT_Teacher
 import math
 import shutil
-import sys
 
 def get_args_parser():
     parser = argparse.ArgumentParser('DynamicViT training and evaluation script', add_help=False)
@@ -201,9 +200,9 @@ def get_param_groups(model, weight_decay):
 def adjust_learning_rate(param_groups, init_lr, min_lr, step, max_step, warming_up_step=2, warmup_predictor=False, base_multi=0.1):
     cos_lr = (math.cos(step / max_step * math.pi) + 1) * 0.5
     cos_lr = min_lr + cos_lr * (init_lr - min_lr)
-    if warmup_predictor and step < 1: # 在 warmup 阶段，predictor 使用 0.01*init_lr；backbone lr == 0.
+    if warmup_predictor and step < 1:
         cos_lr = init_lr * 0.01
-    if step < warming_up_step: # 在一般阶段, predictor 使用 cos_lr. init_lr的cos变化；backbone使用 [0, 0.01] init_lr/predicot [0, 1] init_lr
+    if step < warming_up_step:
         backbone_lr = 0
     else:
         backbone_lr = min(init_lr * 0.01, cos_lr)
@@ -286,11 +285,35 @@ def main(args):
         print('Attention: mixup/cutmix are not used')
 
     base_rate = args.base_rate
-    # 我真的意识到了，它真的是自己教自己。。。
-    # KEEP_RATE = [base_rate, base_rate ** 2, base_rate ** 3]
-    KEEP_RATE = [0.617,0.369,0.137]
+    KEEP_RATE = [base_rate, base_rate ** 2, base_rate ** 3]
 
-    if args.arch == 'deit_small':
+    if args.arch == 'deit_base':
+        PRUNING_LOC = [3,6,9] 
+        print(f"Creating model: {args.arch}")
+        print('token_ratio =', KEEP_RATE, 'at layer', PRUNING_LOC)
+        model = VisionTransformerDiffPruning(
+            patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True, 
+            pruning_loc=PRUNING_LOC, token_ratio=KEEP_RATE, distill=args.distill
+            )
+        model_path = './deit_base_patch16_224-b5f2ef4d.pth'
+        checkpoint = torch.load(model_path, map_location="cpu")
+        ckpt = checkpoint_filter_fn(checkpoint, model)
+        model.default_cfg = _cfg()
+        missing_keys, unexpected_keys = model.load_state_dict(ckpt, strict=False)
+        print('# missing keys=', missing_keys)
+        print('# unexpected keys=', unexpected_keys)
+        print('sucessfully loaded from pre-trained weights:', model_path)
+
+        if args.distill:
+            print('## Distillation Pruning Mode')
+            model_t = VisionTransformerTeacher(
+                patch_size=16, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4, qkv_bias=True
+            )
+            model_t.load_state_dict(ckpt, strict=True)
+            model_t.to(device)
+            print('sucessfully loaded from pre-trained weights for the teach model')
+
+    elif args.arch == 'deit_small':
         PRUNING_LOC = [3,6,9] 
         print(f"Creating model: {args.arch}")
         print('token_ratio =', KEEP_RATE, 'at layer', PRUNING_LOC)
@@ -315,31 +338,6 @@ def main(args):
             model_t.load_state_dict(ckpt, strict=True)
             model_t.to(device)
             print('sucessfully loaded from pre-trained weights for the teach model')
-    elif args.arch == 'deit_tiny':
-        PRUNING_LOC = [3,6,9]
-        print(f"Creating model: {args.arch}")
-        print('token_ratio =', KEEP_RATE, 'at layer', PRUNING_LOC)
-        model = VisionTransformerDiffPruning(
-            patch_size=16, embed_dim=192, depth=12, num_heads=3, mlp_ratio=4, qkv_bias=True,
-            pruning_loc=PRUNING_LOC, token_ratio=KEEP_RATE, distill=args.distill
-            )
-        model_path = './deit_tiny_patch16_224-a1311bcf.pth'
-        checkpoint = torch.load(model_path, map_location="cpu")
-        ckpt = checkpoint_filter_fn(checkpoint, model)
-        model.default_cfg = _cfg()
-        missing_keys, unexpected_keys = model.load_state_dict(ckpt, strict=False)
-        print('# missing keys=', missing_keys)
-        print('# unexpected keys=', unexpected_keys)
-        print('sucessfully loaded from pre-trained weights:', model_path)
-
-        if args.distill:
-            print('## Distillation Pruning Mode')
-            model_t = VisionTransformerTeacher(
-                patch_size=16, embed_dim=192, depth=12, num_heads=3, mlp_ratio=4, qkv_bias=True
-            )
-            model_t.load_state_dict(ckpt, strict=True)
-            model_t.to(device)
-            print('sucessfully loaded from pre-trained weights for the teach model')
     elif args.arch == 'lvvit_s':
         PRUNING_LOC = [4,8,12] 
         print(f"Creating model: {args.arch}")
@@ -349,7 +347,7 @@ def main(args):
             p_emb='4_2',skip_lam=2., return_dense=True,mix_token=True,
             pruning_loc=PRUNING_LOC, token_ratio=KEEP_RATE, distill=args.distill
         )
-        model_path = './lvvit_s-26M-224-83.3.pth.tar'
+        model_path = './lvvit_s-224-83.3.pth.tar'
         checkpoint = torch.load(model_path, map_location="cpu")
         model.default_cfg = _cfg()
         missing_keys, unexpected_keys = model.load_state_dict(checkpoint, strict=False)
@@ -432,7 +430,6 @@ def main(args):
 
         model.load_state_dict(checkpoint_model, strict=False)
 
-    # model = nn.DataParallel(model)
     model.to(device)
 
     model_ema = None
