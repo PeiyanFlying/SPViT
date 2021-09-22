@@ -288,9 +288,8 @@ def main(args):
 
 
     base_rate = args.base_rate
-    KEEP_RATE = [base_rate, base_rate ** 2, base_rate ** 3]
-    # KEEP_RATE = [1.0, 1.0, 1.0]
-    # KEEP_RATE = [0.617,0.369,0.137]
+    # KEEP_RATE = [base_rate, base_rate ** 2, base_rate ** 3]
+    KEEP_RATE = [0.617,0.369,0.137]
 
     if args.arch == 'deit_small':
         PRUNING_LOC = [3,6,9] 
