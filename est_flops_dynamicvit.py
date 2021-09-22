@@ -116,6 +116,8 @@ def AvgPool12(img_size=224, P=16, H=14, C=384):
     return pe + blocks + head
 
 def print_dynamic_vit():
+
+    #hello
     #print('DeiT 12/192', DeiT12(C=192) / 1e9)
     #print('DeiT 12/256', DeiT12(C=256) / 1e9)
     #print('DeiT 12/320', DeiT12(C=320) / 1e9)
