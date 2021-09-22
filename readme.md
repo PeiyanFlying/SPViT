@@ -17,3 +17,5 @@ https://drive.google.com/drive/folders/1diICKopeYL7H84Wsr0Xxh30e9xh6RX2d?usp=sha
 
 ### 生成 multihead-predictor 类
 ### VisionTransformerDiffPruning 的 forward()
+
+###环境：因为加入了torch.nan_to_num(x, nan=4.0)，需要用torch 1.8.0
