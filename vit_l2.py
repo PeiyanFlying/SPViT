@@ -493,9 +493,7 @@ class VisionTransformerDiffPruning(nn.Module):
         x = self.patch_embed(x)
 
         cls_tokens = self.cls_token.expand(B, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
-        #pre_token = self.pre_token.expand(B, -1, -1)
         x = torch.cat((cls_tokens, x), dim=1)
-        #pos_embed = torch.cat((self.pos_embed, self.pos_embed_re), dim=1)
 
         x = x + self.pos_embed
 
@@ -507,16 +505,11 @@ class VisionTransformerDiffPruning(nn.Module):
         sparse = []
         score_dict = {}
         policy = torch.ones(B, init_n + 1, 1, dtype=x.dtype, device=x.device)
-        #policy[:,-1,:] = 0 # pre_token not used in the begining
+
         prev_decision = torch.ones(B, init_n, 1, dtype=x.dtype, device=x.device)
         for i, blk in enumerate(self.blocks):
             if i in self.pruning_loc:
-                ### token selection (mask & weighted score)
-                #if i == self.pruning_loc[0]:
-                    #x = x * policy 
-                    #x[:, -1, :] = 1e-6 # pre_roken initialization
-                    #spatial_x = x[:, 1:-1]
-                #else:
+
                 spatial_x = x[:, 1:]
                 if i != self.pruning_loc[0]:
                     rep_decision = torch.ones(B, 1, 1, dtype=x.dtype, device=x.device)
@@ -546,14 +539,17 @@ class VisionTransformerDiffPruning(nn.Module):
                 #--------------------
                 represent_token = x2_sum / placeholder_score_sum  # regularization --> [96, 1, 384] representitave token
 
+                rep_mean = represent_token.mean()
+                if torch.isnan(rep_mean):
+                    print('has nan')
+                    represent_token = torch.nan_to_num(represent_token, nan = 1e-6)
+
                 if i == self.pruning_loc[0]:
                     x = torch.cat((x,represent_token), dim=1)
                 else:
                     represent_token = x[:, -1:, :] + represent_token
                     x = x[:,:-1]
                     x = torch.cat((x,represent_token), dim=1)
-                #x[:, -1, :] = x[:, -1, :] + represent_token # 和唐老师聊一下，纯粹叠加
-                if i  != self.pruning_loc[0]:
                     hard_keep_decision = hard_keep_decision[:,:-1]
 
                 if self.training:
