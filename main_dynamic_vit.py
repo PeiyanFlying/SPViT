@@ -27,6 +27,7 @@ from vit import VisionTransformerDiffPruning, VisionTransformerTeacher, _cfg, ch
 from lvvit import LVViTDiffPruning, LVViT_Teacher
 import math
 import shutil
+import sys
 
 def get_args_parser():
     parser = argparse.ArgumentParser('DynamicViT training and evaluation script', add_help=False)
@@ -310,6 +311,31 @@ def main(args):
             print('## Distillation Pruning Mode')
             model_t = VisionTransformerTeacher(
                 patch_size=16, embed_dim=384, depth=12, num_heads=6, mlp_ratio=4, qkv_bias=True
+            )
+            model_t.load_state_dict(ckpt, strict=True)
+            model_t.to(device)
+            print('sucessfully loaded from pre-trained weights for the teach model')
+    elif args.arch == 'deit_tiny':
+        PRUNING_LOC = [3,6,9]
+        print(f"Creating model: {args.arch}")
+        print('token_ratio =', KEEP_RATE, 'at layer', PRUNING_LOC)
+        model = VisionTransformerDiffPruning(
+            patch_size=16, embed_dim=192, depth=12, num_heads=3, mlp_ratio=4, qkv_bias=True,
+            pruning_loc=PRUNING_LOC, token_ratio=KEEP_RATE, distill=args.distill
+            )
+        model_path = './deit_tiny_patch16_224-a1311bcf.pth'
+        checkpoint = torch.load(model_path, map_location="cpu")
+        ckpt = checkpoint_filter_fn(checkpoint, model)
+        model.default_cfg = _cfg()
+        missing_keys, unexpected_keys = model.load_state_dict(ckpt, strict=False)
+        print('# missing keys=', missing_keys)
+        print('# unexpected keys=', unexpected_keys)
+        print('sucessfully loaded from pre-trained weights:', model_path)
+
+        if args.distill:
+            print('## Distillation Pruning Mode')
+            model_t = VisionTransformerTeacher(
+                patch_size=16, embed_dim=192, depth=12, num_heads=3, mlp_ratio=4, qkv_bias=True
             )
             model_t.load_state_dict(ckpt, strict=True)
             model_t.to(device)
