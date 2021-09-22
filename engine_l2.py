@@ -28,7 +28,6 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 10
     #i = 0
-    #random.seed(epoch)
 
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header):
 
@@ -42,7 +41,6 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
 
             loss = criterion(samples, outputs, targets)
  
-
         loss_value = loss.item()
 
         if not math.isfinite(loss_value):
@@ -62,7 +60,7 @@ def train_one_epoch(model: torch.nn.Module, criterion: DistillationLoss,
 
         #i+=1
         #
-        # if i > 1: break
+        #if i > 20: break
 
         metric_logger.update(loss=loss_value)
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
@@ -99,6 +97,7 @@ def evaluate(data_loader, model, device):
             loss = criterion(output, target)
 
         acc1, acc5 = accuracy(output, target, topk=(1, 5))
+        sparse=sparse.tolist()
         zero_0 +=sparse[0][0]
         unzero_0 +=sparse[0][1]
         zero_1 +=sparse[1][0]
@@ -119,3 +118,4 @@ def evaluate(data_loader, model, device):
           .format(top1=metric_logger.acc1, top5=metric_logger.acc5, losses=metric_logger.loss))
 
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+
