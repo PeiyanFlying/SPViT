@@ -584,6 +584,14 @@ class MultiheadPredictorLG(nn.Module):
 
         multihead_score = 0
         multihead_softmax_score = 0
+        _, n, _ = x.size()
+        a = nn.AdaptiveAvgPool2d((n, self.num_heads)) #pooling
+        x_head = a(x)   #([64, 196, 6])
+
+        head_weights = self.senet(x_head)
+        head_weights_sum = torch.sum(head_weights, dim=2)
+        head_weights_sum = torch.unsqueeze(head_weights_sum, dim=2)  #([64, 196, 1])
+
         for i in range(self.num_heads):
             x_single = x[:,:,self.embed_dim//self.num_heads*i:self.embed_dim//self.num_heads*(i+1)]   #([96, 196, 64])
             x_single = self.in_conv[i](x_single)
