@@ -24,7 +24,7 @@ import utils
 from functools import partial
 import torch.nn as nn
 from vit_l2_3keep_senet import VisionTransformerDiffPruning, VisionTransformerTeacher, _cfg, checkpoint_filter_fn
-from lvvit_l2 import LVViTDiffPruning, LVViT_Teacher
+from lvvit_l2_3keep_senet import LVViTDiffPruning, LVViT_Teacher
 import math
 import shutil
 
@@ -342,6 +342,7 @@ def main(args):
             model_t.load_state_dict(ckpt, strict=True)
             model_t.to(device)
             print('sucessfully loaded from pre-trained weights for the teach model')
+            
     elif args.arch == 'deit_tiny':
         PRUNING_LOC = [3,6,9]
         print(f"Creating model: {args.arch}")
