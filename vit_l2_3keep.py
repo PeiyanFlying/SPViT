@@ -545,6 +545,8 @@ class VisionTransformerDiffPruning(nn.Module):
                 placeholder_score_sum = torch.unsqueeze(placeholder_score_sum, dim=1)  # resize to [96, 1, 1]
                 #--------------------
                 represent_token = x2_sum / placeholder_score_sum  # regularization --> [96, 1, 384] representitave token
+                
+                rep_mean = represent_token.mean()
                 if torch.isnan(rep_mean):
                     print('has nan')
                     represent_token = torch.nan_to_num(represent_token, nan = 1e-6)
