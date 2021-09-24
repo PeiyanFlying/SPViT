@@ -368,6 +368,7 @@ def main(args):
             model_t.load_state_dict(ckpt, strict=True)
             model_t.to(device)
             print('sucessfully loaded from pre-trained weights for the teach model')
+    
     elif args.arch == 'lvvit_s':
         PRUNING_LOC = [4,8,12] 
         print(f"Creating model: {args.arch}")
@@ -403,7 +404,7 @@ def main(args):
             p_emb='4_2',skip_lam=2., return_dense=True,mix_token=True,
             pruning_loc=PRUNING_LOC, token_ratio=KEEP_RATE, distill=args.distill
         )
-        model_path = './lvvit_m-56M-224-84.0.tar'
+        model_path = './lvvit_m-56M-224-84.0.pth.tar'
         checkpoint = torch.load(model_path, map_location="cpu")
         model.default_cfg = _cfg()
         missing_keys, unexpected_keys = model.load_state_dict(checkpoint, strict=False)
