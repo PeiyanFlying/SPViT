@@ -225,7 +225,7 @@ class DistillDiffPruningLoss(torch.nn.Module):
             # print(cls_loss, pred_loss)
         loss = self.clf_weight * cls_loss + self.ratio_weight * pred_loss / len(self.pruning_loc) + self.distill_weight * cls_kl_loss + self.distill_weight * token_kl_loss
         
-        print('loss info: cls_loss=%.4f, ratio_loss=%.4f, cls_kl=%.4f, token_kl=%.4f' % (cls_loss, pred_loss, cls_kl_loss, token_kl_loss))
+        #print('loss info: cls_loss=%.4f, ratio_loss=%.4f, cls_kl=%.4f, token_kl=%.4f' % (cls_loss, pred_loss, cls_kl_loss, token_kl_loss))
         if self.print_mode:
             self.cls_loss += cls_loss.item()
             self.ratio_loss += pred_loss.item()
