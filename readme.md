@@ -18,7 +18,7 @@ pip3 install timm==0.4.5
 
 ## 命令
 
-举例：跑deit-small, 用3keep+senet的代码
+举例：跑deit-small, 用3keep+senet的代码.
 
 python3 -u -m torch.distributed.launch --nproc_per_node=8 --use_env main_l2_vit_3keep_senet.py --output_dir logs/3keep_senet --arch deit_small --input-size 224 --batch-size 256 --data-path /data/ImageNet_new/ --epochs 30 --dist-eval --distill --base_rate 0.7 2>&1 | tee -i 3keep_senet.log
 
