@@ -316,7 +316,7 @@ class PredictorLG(nn.Module):
         )
 
     def forward(self, x, policy):
-        x = self.in_conv(x)
+        x = self.in_conv(x) # [1, 14*14, 384]
         B, N, C = x.size()
         local_x = x[:,:, :C//2]
         global_x = (x[:,:, C//2:] * policy).sum(dim=1, keepdim=True) / torch.sum(policy, dim=1, keepdim=True)
@@ -340,11 +340,14 @@ class MultiheadPredictorLG(nn.Module):
         )
 
         onehead_in_conv = nn.Sequential(
-            nn.LayerNorm(embed_dim // num_heads),
-            nn.Linear(embed_dim // num_heads, embed_dim // num_heads),
-            nn.GELU()
+            # nn.LayerNorm(embed_dim // num_heads),
+            nn.Conv1d(embed_dim // num_heads, embed_dim // num_heads, 3, padding = 1),
+            nn.BatchNorm1d(embed_dim // num_heads),
+            nn.ReLU(),
+            nn.Conv1d(embed_dim // num_heads, embed_dim // num_heads, 3, padding = 1),
+            nn.BatchNorm1d(embed_dim // num_heads),
+            nn.ReLU()
         )
-
         onehead_out_conv = nn.Sequential(
             nn.Linear(embed_dim // num_heads, embed_dim // num_heads  // 2),
             nn.GELU(),
@@ -375,7 +378,8 @@ class MultiheadPredictorLG(nn.Module):
 
         for i in range(self.num_heads):
             x_single = x[:,:,self.embed_dim//self.num_heads*i:self.embed_dim//self.num_heads*(i+1)]   #([96, 196, 64])
-            x_single = self.in_conv[i](x_single)
+            permuted_tensor = x_single.permute(0,2,1).clone().contiguous()
+            x_single = self.in_conv[i](permuted_tensor).permute(0,2,1).clone().contiguous()
             B, N, C = x_single.size()       #([96, 196, 64])
             local_x = x_single[:,:, :C//2]  #([96, 196, 32])
             global_x = (x_single[:,:, C//2:] * policy).sum(dim=1, keepdim=True) / torch.sum(policy, dim=1, keepdim=True)  #([96, 1, 32])
