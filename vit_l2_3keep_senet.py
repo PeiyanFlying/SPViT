@@ -316,7 +316,7 @@ class PredictorLG(nn.Module):
         )
 
     def forward(self, x, policy):
-        x = self.in_conv(x) # [1, 14*14, 384]
+        x = self.in_conv(x)
         B, N, C = x.size()
         local_x = x[:,:, :C//2]
         global_x = (x[:,:, C//2:] * policy).sum(dim=1, keepdim=True) / torch.sum(policy, dim=1, keepdim=True)
@@ -340,14 +340,11 @@ class MultiheadPredictorLG(nn.Module):
         )
 
         onehead_in_conv = nn.Sequential(
-            # nn.LayerNorm(embed_dim // num_heads),
-            nn.Conv1d(embed_dim // num_heads, embed_dim // num_heads, 3, padding = 1),
-            nn.BatchNorm1d(embed_dim // num_heads),
-            nn.ReLU(),
-            nn.Conv1d(embed_dim // num_heads, embed_dim // num_heads, 3, padding = 1),
-            nn.BatchNorm1d(embed_dim // num_heads),
-            nn.ReLU()
+            nn.LayerNorm(embed_dim // num_heads),
+            nn.Linear(embed_dim // num_heads, embed_dim // num_heads),
+            nn.GELU()
         )
+
         onehead_out_conv = nn.Sequential(
             nn.Linear(embed_dim // num_heads, embed_dim // num_heads  // 2),
             nn.GELU(),
@@ -378,8 +375,7 @@ class MultiheadPredictorLG(nn.Module):
 
         for i in range(self.num_heads):
             x_single = x[:,:,self.embed_dim//self.num_heads*i:self.embed_dim//self.num_heads*(i+1)]   #([96, 196, 64])
-            permuted_tensor = x_single.permute(0,2,1).clone().contiguous()
-            x_single = self.in_conv[i](permuted_tensor).permute(0,2,1).clone().contiguous()
+            x_single = self.in_conv[i](x_single)
             B, N, C = x_single.size()       #([96, 196, 64])
             local_x = x_single[:,:, :C//2]  #([96, 196, 32])
             global_x = (x_single[:,:, C//2:] * policy).sum(dim=1, keepdim=True) / torch.sum(policy, dim=1, keepdim=True)  #([96, 1, 32])
@@ -534,7 +530,6 @@ class VisionTransformerDiffPruning(nn.Module):
                 print('hello****')
                 print('blk num',i)
             if i in self.pruning_loc:
-
                 spatial_x = x[:, 1:]
                 if i != self.pruning_loc[0]:
                     rep_decision = torch.ones(B, p_count, 1, dtype=x.dtype, device=x.device)
@@ -559,22 +554,20 @@ class VisionTransformerDiffPruning(nn.Module):
                 x2_sum = torch.sum(x2, dim=1)  # sum by the N dimension, output (B,N,C)-->(B,C) [96, 384]
                 x2_sum = torch.unsqueeze(x2_sum, dim=1)  # resize to (B,1,C)  [96, 1, 384]
                 #--------------------
-                placeholder_score_sum = torch.sum(placeholder_score, dim=1)  # sum of token score, [96, 196, 1]-->[96, 1]
-                placeholder_score_sum = torch.unsqueeze(placeholder_score_sum, dim=1)  # resize to [96, 1, 1]
+                # placeholder_score_sum = torch.sum(placeholder_score, dim=1)  # sum of token score, [96, 196, 1]-->[96, 1]
+                # placeholder_score_sum = torch.unsqueeze(placeholder_score_sum, dim=1)  # resize to [96, 1, 1]
                 #--------------------
 
-                represent_token = x2_sum/ placeholder_score_sum
+                represent_token = x2_sum   #/ (placeholder_score_sum)
 
                 rep_mean = represent_token.mean()
                 if torch.isnan(rep_mean):
                     print('has nan')
-                    represent_token = torch.nan_to_num(represent_token, nan = 1e-6)
-             
+                    represent_token = torch.nan_to_num(represent_token, nan = 1e-8)
 
                 x = torch.cat((x,represent_token), dim=1)
                 if i != self.pruning_loc[0]:
                     hard_keep_decision = hard_keep_decision[:,:-p_count]
-
 
                 if self.training:
                     out_pred_prob.append(hard_keep_decision.reshape(B, init_n))
@@ -778,4 +771,3 @@ def test_irregular_sparsity(name,matrix):
     # total_nonzeros += 128000
 
     return zeros,non_zeros
-
