@@ -2,12 +2,8 @@
 
 This repository contains PyTorch training code for the ECCV 2022 paper.
 
-[arXiv](https://arxiv.org/abs/2211.10801) |  [ECCV 2022](https://www.ecva.net/papers/eccv_2022/papers_ECCV/papers/136710618.pdf)
+[arXiv](https://arxiv.org/abs/2112.13890) |  [ECCV 2022](https://www.ecva.net/papers/eccv_2022/papers_ECCV/papers/136710618.pdf)
 
-<p align="center">
-  <img src="./plot_time_acc_table.png" width=60%> <br>
-  Comparison of different models with various accuracy-training time trade-off..
-</p>
 
 ## Usage
 
