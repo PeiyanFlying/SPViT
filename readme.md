@@ -10,9 +10,9 @@ This repository contains PyTorch training code for the ECCV 2022 paper.
 ### Environment Settings
 
 ```
-conda create -n DynamicVit python=3.6
+conda create -n spvit python=3.6
 
-conda activate DynamicVit
+conda activate spvit
 
 conda deactivate
 
