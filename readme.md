@@ -14,8 +14,6 @@ conda create -n spvit python=3.6
 
 conda activate spvit
 
-conda deactivate
-
 conda install pytorch==1.8.0 torchvision==0.9.0 torchaudio==0.8.0 -c pytorch
 
 pip3 install timm==0.4.5
