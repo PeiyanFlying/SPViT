@@ -25,7 +25,7 @@ from samplers import RASampler
 from functools import partial
 
 
-from vit import VisionTransformerDiffPruning
+from vit_l2_3keep_senet import VisionTransformerDiffPruning
 from lvvit import LVViTDiffPruning
 
 
@@ -186,8 +186,7 @@ def validate(val_loader, model, criterion):
     progress = ProgressMeter(
         len(val_loader),
         [batch_time, losses, top1, top5],
-        prefix='Test: ')
-
+        prefix='Test:')
 
     with torch.no_grad():
         end = time.time()
@@ -196,7 +195,10 @@ def validate(val_loader, model, criterion):
             target = target.cuda()
 
             # compute output
-            output = model(images)
+            with torch.cuda.amp.autocast(enabled=False):
+                output_all = model(images)  # Get the tuple of outputs
+                output = output_all[0]  # Use the primary output for loss calculation
+
             loss = criterion(output, target)
 
             # measure accuracy and record loss
@@ -212,7 +214,6 @@ def validate(val_loader, model, criterion):
             if i % 20 == 0:
                 progress.display(i)
 
-        # TODO: this should also be done with the ProgressMeter
         print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
               .format(top1=top1, top5=top5))
 
@@ -222,3 +223,4 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser('Dynamic evaluation script', parents=[get_args_parser()])
     args = parser.parse_args()
     main(args)
+
