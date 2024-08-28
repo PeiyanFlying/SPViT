@@ -78,6 +78,13 @@ CUDA_VISIBLE_DEVICES="0,1,2,3"  python3 -u -m torch.distributed.launch --nproc_p
 ```
 
 
+### Inference
+
+```
+python infer.py --data-path /home/imagenet --model deit_small --model-path checkpoint_best.pth --base_rate 0.7 
+```
+
+
 ### Some hyperparameter tunning results 
 https://docs.google.com/spreadsheets/d/1k25sS_-mmQyIvpIrn32GUw3eRuYcCy0cN0OSOq0QGFI/edit?usp=sharing
 
